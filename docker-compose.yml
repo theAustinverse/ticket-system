@@ -35,9 +35,10 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://ticket:ticket@postgres:5432/ticket_system?schema=public
+      DATABASE_URL: postgresql://ticket:ticket@postgres:5432/ticket_system?schema=public&connection_limit=20
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      UV_THREADPOOL_SIZE: "16"
     ports:
       - "3000:3000"
     depends_on:

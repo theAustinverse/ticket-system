@@ -4,10 +4,12 @@ import { randomUUID } from 'crypto';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module';
 
-/** How many waiting tokens are admitted into "can order" state per tick. */
-const ADMIT_BATCH_SIZE = 20;
-/** How often the admission loop runs. */
+/** Target sustained admission throughput, independent of how often the tick actually fires. */
+const ADMIT_RATE_PER_SECOND = 20;
+/** How often the admission loop runs (best-effort; may fire late under load). */
 const ADMIT_INTERVAL_MS = 1000;
+/** Safety cap so a huge elapsed gap (e.g. after a GC pause) can't admit everyone at once. */
+const MAX_ADMIT_PER_TICK = ADMIT_RATE_PER_SECOND * 10;
 /** How long an admitted token stays valid before it must re-queue. */
 const ADMITTED_TTL_SECONDS = 5 * 60;
 
@@ -19,6 +21,7 @@ export type QueueStatus =
 @Injectable()
 export class QueueRoomService {
   private readonly logger = new Logger(QueueRoomService.name);
+  private readonly lastAdmitAt = new Map<string, number>();
 
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
 
@@ -71,12 +74,27 @@ export class QueueRoomService {
     }
   }
 
+  /**
+   * Admits enough tokens to cover the actual wall-clock time elapsed since
+   * the last tick, rather than a fixed count per firing. This keeps
+   * sustained throughput correct even if the event loop is busy and the
+   * @Interval callback fires late or is skipped under heavy load.
+   */
   private async admitNext(ticketTypeId: string) {
+    const now = Date.now();
+    const last = this.lastAdmitAt.get(ticketTypeId) ?? now - ADMIT_INTERVAL_MS;
+    const elapsedMs = now - last;
+    const batchSize = Math.min(
+      MAX_ADMIT_PER_TICK,
+      Math.max(1, Math.round((elapsedMs / 1000) * ADMIT_RATE_PER_SECOND)),
+    );
+
     const tokens = await this.redis.zrange(
       this.queueKey(ticketTypeId),
       0,
-      ADMIT_BATCH_SIZE - 1,
+      batchSize - 1,
     );
+    this.lastAdmitAt.set(ticketTypeId, now);
     if (tokens.length === 0) return;
 
     const pipeline = this.redis.pipeline();

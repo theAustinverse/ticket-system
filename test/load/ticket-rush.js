@@ -4,25 +4,37 @@ import { Counter } from 'k6/metrics';
 
 /**
  * Load test for the high-concurrency ticket rush flow:
- * register -> login -> enter queue room -> poll until admitted -> create order.
+ * register -> enter queue room -> poll until admitted -> create order.
  *
- * Run with: k6 run -e BASE_URL=http://localhost:3000 test/load/ticket-rush.js
+ * The ticket type must already exist (see scratch-seed-loadtest.sh pattern:
+ * create an Event -> Session -> SaleBatch with saleStartAt in the past ->
+ * TicketType). Pass its id and stock size in:
+ *
+ *   k6 run -e BASE_URL=http://localhost:3000 \
+ *     -e TICKET_TYPE_ID=<id> -e TOTAL_STOCK=250 -e VUS=2500 \
+ *     test/load/ticket-rush.js
  *
  * After the run, verify no oversell by checking the database directly:
- *   SELECT COUNT(*) FROM "Order" WHERE "ticketTypeId" = '<ticketTypeId printed in setup>';
+ *   SELECT COUNT(*) FROM "Order" WHERE "ticketTypeId" = '<TICKET_TYPE_ID>';
  * This count must be <= TOTAL_STOCK.
  */
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000';
-const TOTAL_STOCK = 200;
+const TICKET_TYPE_ID = __ENV.TICKET_TYPE_ID;
+const TOTAL_STOCK = Number(__ENV.TOTAL_STOCK || 250);
+const VUS = Number(__ENV.VUS || 2500);
+
+if (!TICKET_TYPE_ID) {
+  throw new Error('Set -e TICKET_TYPE_ID=<id> to the ticket type to hammer');
+}
 
 export const options = {
   scenarios: {
     ticket_rush: {
       executor: 'per-vu-iterations',
-      vus: 500,
+      vus: VUS,
       iterations: 1,
-      maxDuration: '2m',
+      maxDuration: '8m',
     },
   },
 };
@@ -32,35 +44,19 @@ const ordersRejected = new Counter('orders_rejected');
 const insufficientStock = new Counter('orders_insufficient_stock');
 
 export function setup() {
-  const eventRes = http.post(
-    `${BASE_URL}/events`,
-    JSON.stringify({ name: 'Load Test Concert' }),
-    { headers: { 'Content-Type': 'application/json' } },
-  );
-  const eventId = eventRes.json('id');
-
-  const sessionRes = http.post(
-    `${BASE_URL}/events/${eventId}/sessions`,
-    JSON.stringify({ venue: 'Test Arena', startTime: new Date().toISOString() }),
-    { headers: { 'Content-Type': 'application/json' } },
-  );
-  const sessionId = sessionRes.json('id');
-
-  const ticketTypeRes = http.post(
-    `${BASE_URL}/events/sessions/${sessionId}/ticket-types`,
-    JSON.stringify({ name: 'GA', price: 1000, totalQuantity: TOTAL_STOCK }),
-    { headers: { 'Content-Type': 'application/json' } },
-  );
-  const ticketTypeId = ticketTypeRes.json('id');
-
-  console.log(`ticketTypeId=${ticketTypeId} totalStock=${TOTAL_STOCK}`);
-  return { ticketTypeId };
+  console.log(`ticketTypeId=${TICKET_TYPE_ID} totalStock=${TOTAL_STOCK} vus=${VUS}`);
+  return { ticketTypeId: TICKET_TYPE_ID };
 }
 
 export default function (data) {
   const { ticketTypeId } = data;
   const email = `loadtest-${__VU}-${Date.now()}@example.com`;
   const password = 'password123';
+
+  // Spread the initial connection burst over a few seconds instead of every
+  // VU opening a socket in the exact same instant, which just tests the OS
+  // TCP accept-queue depth rather than the application.
+  sleep(Math.random() * 5);
 
   const registerRes = http.post(
     `${BASE_URL}/auth/register`,
@@ -83,7 +79,7 @@ export default function (data) {
   const token = enterRes.json('token');
 
   let admitted = false;
-  for (let attempt = 0; attempt < 30; attempt++) {
+  for (let attempt = 0; attempt < 150; attempt++) {
     const statusRes = http.get(
       `${BASE_URL}/queue/${ticketTypeId}/status?token=${token}`,
       authHeaders,
