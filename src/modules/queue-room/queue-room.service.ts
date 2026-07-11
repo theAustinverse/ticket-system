@@ -4,8 +4,14 @@ import { randomUUID } from 'crypto';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module';
 
-/** Target sustained admission throughput, independent of how often the tick actually fires. */
-const ADMIT_RATE_PER_SECOND = 20;
+/**
+ * Target sustained admission throughput, independent of how often the tick
+ * actually fires. This is purely a pacing/UX knob — correctness against
+ * overselling is guaranteed entirely by the atomic Redis stock decrement in
+ * InventoryService, not by how fast people are let through here. Tune this
+ * up freely to shorten wait times without risking oversell.
+ */
+const ADMIT_RATE_PER_SECOND = 200;
 /** How often the admission loop runs (best-effort; may fire late under load). */
 const ADMIT_INTERVAL_MS = 1000;
 /** Safety cap so a huge elapsed gap (e.g. after a GC pause) can't admit everyone at once. */
