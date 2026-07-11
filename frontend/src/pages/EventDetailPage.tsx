@@ -34,7 +34,7 @@ function TicketTypeRow({
       </div>
       <button
         disabled={!open}
-        onClick={() => navigate(`/queue/${ticketType.id}`)}
+        onClick={() => navigate(`/register/${ticketType.id}`)}
       >
         {open ? '搶票' : '尚未開賣'}
       </button>

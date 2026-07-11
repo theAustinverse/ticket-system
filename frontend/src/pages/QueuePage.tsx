@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import type { RegistrationInfo } from '../api/types';
 
 const POLL_INTERVAL_MS = 2500;
 
 export function QueuePage() {
   const { ticketTypeId } = useParams<{ ticketTypeId: string }>();
+  const location = useLocation();
+  const registration = (
+    location.state as { registration?: RegistrationInfo } | null
+  )?.registration;
   const { token } = useAuth();
   const navigate = useNavigate();
   const [position, setPosition] = useState<number | null>(null);
@@ -19,6 +24,10 @@ export function QueuePage() {
       return;
     }
     if (!ticketTypeId) return;
+    if (!registration) {
+      navigate(`/register/${ticketTypeId}`);
+      return;
+    }
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -37,7 +46,7 @@ export function QueuePage() {
 
         if (status.state === 'admitted') {
           navigate(`/order/${ticketTypeId}`, {
-            state: { queueToken: queueTokenRef.current },
+            state: { queueToken: queueTokenRef.current, registration },
           });
           return;
         }
@@ -57,7 +66,7 @@ export function QueuePage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [ticketTypeId, token, navigate]);
+  }, [ticketTypeId, token, navigate, registration]);
 
   return (
     <div className="page page-narrow">

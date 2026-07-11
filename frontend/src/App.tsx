@@ -2,6 +2,7 @@ import { Link, Route, Routes } from 'react-router-dom';
 import { LoginPage } from './pages/LoginPage';
 import { EventListPage } from './pages/EventListPage';
 import { EventDetailPage } from './pages/EventDetailPage';
+import { RegistrationPage } from './pages/RegistrationPage';
 import { QueuePage } from './pages/QueuePage';
 import { OrderPage } from './pages/OrderPage';
 import { OrderStatusPage } from './pages/OrderStatusPage';
@@ -34,6 +35,7 @@ export function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/events" element={<EventListPage />} />
         <Route path="/events/:eventId" element={<EventDetailPage />} />
+        <Route path="/register/:ticketTypeId" element={<RegistrationPage />} />
         <Route path="/queue/:ticketTypeId" element={<QueuePage />} />
         <Route path="/order/:ticketTypeId" element={<OrderPage />} />
         <Route path="/orders/:orderId" element={<OrderStatusPage />} />

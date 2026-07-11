@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import type { TicketType } from '../api/types';
+import type { RegistrationInfo, TicketType } from '../api/types';
 
 export function OrderPage() {
   const { ticketTypeId } = useParams<{ ticketTypeId: string }>();
   const location = useLocation();
-  const queueToken = (location.state as { queueToken?: string } | null)
-    ?.queueToken;
+  const state = location.state as {
+    queueToken?: string;
+    registration?: RegistrationInfo;
+  } | null;
+  const queueToken = state?.queueToken;
+  const registration = state?.registration;
   const { token } = useAuth();
   const navigate = useNavigate();
 
@@ -22,7 +26,7 @@ export function OrderPage() {
       navigate('/login');
       return;
     }
-    if (!queueToken) {
+    if (!queueToken || !registration) {
       setError('請先透過排隊室進入下單頁面');
       return;
     }
@@ -31,10 +35,10 @@ export function OrderPage() {
       setTicketType(tt);
       if (tt.fixedQuantity) setQuantity(tt.fixedQuantity);
     });
-  }, [ticketTypeId, token, queueToken, navigate]);
+  }, [ticketTypeId, token, queueToken, registration, navigate]);
 
   async function handleSubmit() {
-    if (!ticketTypeId || !queueToken || !token) return;
+    if (!ticketTypeId || !queueToken || !token || !registration) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -43,6 +47,7 @@ export function OrderPage() {
         queueToken,
         ticketTypeId,
         quantity,
+        registration,
       );
       navigate(`/orders/${order.id}`);
     } catch (err) {
@@ -63,7 +68,7 @@ export function OrderPage() {
     );
   }
 
-  if (!ticketType) return <div className="page">載入中…</div>;
+  if (!ticketType || !registration) return <div className="page">載入中…</div>;
 
   return (
     <div className="page page-narrow">
@@ -86,6 +91,27 @@ export function OrderPage() {
         <p className="hint">此票種每次限購 {ticketType.fixedQuantity} 張</p>
       )}
       <p>總金額：NT$ {(ticketType.price * quantity).toLocaleString()}</p>
+
+      <h2>報名資料</h2>
+      <p>
+        {registration.registrantName} · {registration.registrantTeam}
+        <br />
+        LINE ID：{registration.registrantLineId} · 電話：
+        {registration.registrantPhone}
+      </p>
+      {registration.groupMembers && (
+        <>
+          <p>
+            主揪：{registration.groupLeaderName}（LINE：
+            {registration.groupLeaderLineId}，電話：
+            {registration.groupLeaderPhone}）
+          </p>
+          <p className="hint">
+            成員名單：{registration.groupMembers.join('、')}
+          </p>
+        </>
+      )}
+
       {error && <p className="error">{error}</p>}
       <button onClick={handleSubmit} disabled={submitting}>
         {submitting ? '送出中…' : '確認下單'}

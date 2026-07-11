@@ -50,4 +50,23 @@ export interface Order {
   status: OrderStatus;
   expiresAt: string;
   createdAt: string;
+  registrantName: string;
+  registrantTeam: string;
+  registrantLineId: string;
+  registrantPhone: string;
+  groupLeaderName: string | null;
+  groupLeaderLineId: string | null;
+  groupLeaderPhone: string | null;
+  groupMembers: string[] | null;
+}
+
+export interface RegistrationInfo {
+  registrantName: string;
+  registrantTeam: string;
+  registrantLineId: string;
+  registrantPhone: string;
+  groupLeaderName?: string;
+  groupLeaderLineId?: string;
+  groupLeaderPhone?: string;
+  groupMembers?: string[];
 }

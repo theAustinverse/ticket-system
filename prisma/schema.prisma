@@ -84,6 +84,16 @@ model Order {
   status       OrderStatus @default(PENDING)
   expiresAt    DateTime
   createdAt    DateTime    @default(now())
+
+  registrantName    String
+  registrantTeam    String
+  registrantLineId  String
+  registrantPhone   String
+  groupLeaderName   String?
+  groupLeaderLineId String?
+  groupLeaderPhone  String?
+  /// string[] of member names; only used when ticketType.fixedQuantity is set.
+  groupMembers      Json?
 }
 
 enum OrderStatus {

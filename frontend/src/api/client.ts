@@ -3,6 +3,7 @@ import type {
   EventSummary,
   Order,
   QueueStatus,
+  RegistrationInfo,
   TicketType,
 } from './types';
 
@@ -76,11 +77,12 @@ export const api = {
     queueToken: string,
     ticketTypeId: string,
     quantity: number,
+    registration: RegistrationInfo,
   ) =>
     request<Order>('/orders', {
       method: 'POST',
       headers: { ...authHeader(authToken), 'x-queue-token': queueToken },
-      body: JSON.stringify({ ticketTypeId, quantity }),
+      body: JSON.stringify({ ticketTypeId, quantity, ...registration }),
     }),
 
   getOrder: (authToken: string, id: string) =>

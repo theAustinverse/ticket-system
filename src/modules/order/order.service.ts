@@ -34,13 +34,30 @@ export class OrderService {
       throw error;
     }
 
-    if (
-      ticketType.fixedQuantity !== null &&
-      dto.quantity !== ticketType.fixedQuantity
-    ) {
-      throw new BadRequestException(
-        `This ticket type must be purchased in bundles of ${ticketType.fixedQuantity}`,
-      );
+    if (ticketType.fixedQuantity !== null) {
+      if (dto.quantity !== ticketType.fixedQuantity) {
+        throw new BadRequestException(
+          `This ticket type must be purchased in bundles of ${ticketType.fixedQuantity}`,
+        );
+      }
+      if (
+        !dto.groupLeaderName ||
+        !dto.groupLeaderLineId ||
+        !dto.groupLeaderPhone
+      ) {
+        throw new BadRequestException(
+          'Group leader name, LINE ID, and phone are required for this ticket type',
+        );
+      }
+      if (
+        !dto.groupMembers ||
+        dto.groupMembers.length !== ticketType.fixedQuantity ||
+        dto.groupMembers.some((name) => !name.trim())
+      ) {
+        throw new BadRequestException(
+          `groupMembers must list exactly ${ticketType.fixedQuantity} non-empty names`,
+        );
+      }
     }
 
     try {
@@ -69,6 +86,14 @@ export class OrderService {
           quantity: dto.quantity,
           totalAmount,
           expiresAt,
+          registrantName: dto.registrantName,
+          registrantTeam: dto.registrantTeam,
+          registrantLineId: dto.registrantLineId,
+          registrantPhone: dto.registrantPhone,
+          groupLeaderName: dto.groupLeaderName,
+          groupLeaderLineId: dto.groupLeaderLineId,
+          groupLeaderPhone: dto.groupLeaderPhone,
+          groupMembers: dto.groupMembers,
         },
       });
     } catch (error) {

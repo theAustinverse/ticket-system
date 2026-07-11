@@ -4,3 +4,4 @@ generated
 coverage
 .git
 *.log
+*.tsbuildinfo
