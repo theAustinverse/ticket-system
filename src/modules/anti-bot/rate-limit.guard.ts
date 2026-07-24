@@ -37,6 +37,13 @@ export class RateLimitGuard implements CanActivate, OnModuleInit {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // Load-test escape hatch: a k6 run from a single machine shares one IP,
+    // which this guard would otherwise throttle into the ground regardless
+    // of real backend capacity. Must be unset outside of an active test.
+    if (process.env.LOAD_TEST_MODE === 'true') {
+      return true;
+    }
+
     const options =
       this.reflector.get<RateLimitOptions>(
         RATE_LIMIT_KEY,
