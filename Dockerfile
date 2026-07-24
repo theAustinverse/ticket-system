@@ -13,5 +13,10 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/prisma.config.ts ./prisma.config.ts
 EXPOSE 3000
-CMD ["node", "dist/main.js"]
+# migrate deploy is idempotent (no-ops if a migration was already applied),
+# so running it on every boot means new migrations ship with the deploy
+# itself instead of needing a manual `prisma migrate deploy` run against
+# production credentials from a local machine each time.
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
