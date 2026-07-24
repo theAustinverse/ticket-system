@@ -1,2 +1,2 @@
-export const ORDER_EXPIRY_QUEUE = 'order-expiry';
-export const ORDER_EXPIRY_MINUTES = 10;
+/** Self-service cancellation closes this many days before the event starts. */
+export const REFUND_CUTOFF_DAYS = 7;
