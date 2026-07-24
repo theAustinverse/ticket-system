@@ -20,6 +20,15 @@ model User {
   role         Role     @default(USER)
   createdAt    DateTime @default(now())
   orders       Order[]
+  /// Profile fields below are null until the user fills in their settings
+  /// page; all four must be set together before they can enter a queue.
+  name         String?
+  team         String?
+  lineId       String?
+  phone        String?
+  chatMessages ChatMessage[]
+  transfersSent     TicketTransfer[] @relation("TransferFrom")
+  transfersReceived TicketTransfer[] @relation("TransferTo")
 }
 
 enum Role {
@@ -41,6 +50,8 @@ model Session {
   eventId     String
   venue       String
   startTime   DateTime
+  /// Link to the venue's Google Maps place page, if provided.
+  mapUrl      String?
   batches     SaleBatch[]
   ticketTypes TicketType[]
 }
@@ -53,6 +64,19 @@ model SaleBatch {
   sessionId   String
   name        String
   saleStartAt DateTime?
+  /// When this wave's own sale window closes, independent of whether the
+  /// next wave has opened yet. Once passed: no more purchases or refunds for
+  /// this batch's ticket types, and StockSweepService sweeps whatever's left
+  /// (unsold individual stock + group orders' still-blank member seats) into
+  /// the next batch at that batch's price. Null means "no fixed close date".
+  saleEndAt   DateTime?
+  /// Wave order within a session is inferred from this (earliest = wave 1).
+  createdAt   DateTime     @default(now())
+  /// True once this batch's OWN saleEndAt has passed and its leftover stock
+  /// has already been swept into the next wave. Idempotency guard for
+  /// StockSweepService — lives on the batch being swept FROM, not the one
+  /// receiving the sweep.
+  stockSweepDone Boolean   @default(false)
   ticketTypes TicketType[]
 }
 
@@ -68,6 +92,36 @@ model TicketType {
   /// If set, every order for this ticket type must request exactly this
   /// quantity (e.g. 11 for a group ticket bundle).
   fixedQuantity Int?
+  /// Only meaningful when fixedQuantity is null (an individual ticket type,
+  /// not a group bundle) — lets one order buy 2..N of this ticket in one go
+  /// (e.g. an early-bird individual ticket a person can also buy on behalf
+  /// of up to 4 family members). Null/1 means the existing one-per-order
+  /// behavior for ordinary individual ticket types.
+  maxQuantityPerOrder Int?
+  /// When set, this ticket type draws from a shared Redis stock pool keyed
+  /// by this string instead of its own id — used to split one physical
+  /// allotment (e.g. 250 early-bird seats) between a group ticket type
+  /// (11/order) and an individual ticket type (1-5/order), whichever sells
+  /// first eating into the same pool. Every ticket type sharing a key must
+  /// carry the same poolTotalQuantity.
+  sharedStockKey String?
+  /// Only meaningful when sharedStockKey is set — the true size of the whole
+  /// shared pool (e.g. 250), as opposed to totalQuantity which is kept for
+  /// display/legacy purposes and may not reflect the shared ceiling.
+  poolTotalQuantity Int?
+  /// Only meaningful on a shared-pool group ticket type (fixedQuantity set):
+  /// hard cap on how many group bundles can ever be sold from the pool,
+  /// independent of remaining stock — e.g. 20 bundles (220 of 250 seats),
+  /// guaranteeing at least 30 seats stay reachable by individual tickets.
+  maxGroupOrders Int?
+  /// Gates entry into this ticket type's queue behind a shared passcode
+  /// (see QueueRoomService) — e.g. for a group ticket type, so someone who
+  /// only holds individual-ticket eligibility can't wander into the group
+  /// queue by mistake. The passcode itself is not secret-grade; it's just a
+  /// speed bump, not an authorization boundary — orders still record who
+  /// bought what for admin review.
+  requiresPasscode Boolean @default(false)
+  createdAt     DateTime   @default(now())
   orders        Order[]
 }
 
@@ -81,8 +135,7 @@ model Order {
   /// Snapshot of quantity * ticketType.price at the time of purchase, so
   /// later price changes don't retroactively affect existing orders.
   totalAmount  Int
-  status       OrderStatus @default(PENDING)
-  expiresAt    DateTime
+  status       OrderStatus @default(PAID)
   createdAt    DateTime    @default(now())
 
   registrantName    String
@@ -94,6 +147,30 @@ model Order {
   groupLeaderPhone  String?
   /// string[] of member names; only used when ticketType.fixedQuantity is set.
   groupMembers      Json?
+  /// Companion[] (name, relationship, mealPreference, child-seat need, note).
+  /// On a multi-quantity individual ticket type (TicketType.maxQuantityPerOrder):
+  /// - buyingForFamily = false: one entry per ticket beyond the buyer's own
+  ///   (ticket #1 uses the registrant* fields above).
+  /// - buyingForFamily = true: one entry per ticket, quantity entries total —
+  ///   every ticket including #1 is on behalf of a family member, so the
+  ///   registrant* fields above are just administrative buyer identity, not
+  ///   an actual ticket holder.
+  companions        Json?
+  /// True when this order was placed entirely on behalf of family members —
+  /// the buyer self-declares they are already a member of someone else's
+  /// group ticket. Self-reported only; not verified against any existing
+  /// group-ticket record.
+  buyingForFamily   Boolean @default(false)
+  /// Survey only (no extra charge): how many child seats this whole order
+  /// needs, 0 (default, no need) to 4. One value per order, not per ticket.
+  childSeatCount    Int     @default(0)
+  /// "葷食" / "素食" / a custom string when the registrant picked "其他".
+  /// Defaulted only so existing rows created before this field existed
+  /// don't violate NOT NULL; every new order always supplies it explicitly.
+  mealPreference    String  @default("未填寫")
+  /// Internal note the admin writes in the back office; never shown to users.
+  adminNote         String?
+  transfers         TicketTransfer[]
 }
 
 enum OrderStatus {
@@ -101,4 +178,40 @@ enum OrderStatus {
   PAID
   EXPIRED
   CANCELLED
+}
+
+/// A whole-order ownership transfer from one registered account to another.
+/// Only one PENDING transfer may exist per order at a time (enforced in
+/// OrderService, not the DB) — the recipient must accept before Order.userId
+/// actually changes; nothing moves on creation alone.
+model TicketTransfer {
+  id          String               @id @default(cuid())
+  order       Order                @relation(fields: [orderId], references: [id])
+  orderId     String
+  fromUser    User                 @relation("TransferFrom", fields: [fromUserId], references: [id])
+  fromUserId  String
+  toUser      User                 @relation("TransferTo", fields: [toUserId], references: [id])
+  toUserId    String
+  status      TicketTransferStatus @default(PENDING)
+  createdAt   DateTime             @default(now())
+  respondedAt DateTime?
+}
+
+enum TicketTransferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+/// A single post in the site-wide public chat / feedback wall ("心情便利貼").
+model ChatMessage {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  /// Snapshot of the poster's profile name at post time, so the displayed
+  /// author doesn't retroactively change if they later edit their profile.
+  authorName String
+  content    String
+  createdAt  DateTime @default(now())
 }
