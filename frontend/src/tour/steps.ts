@@ -183,6 +183,13 @@ export function buildSteps(eventId: string | null): TourStep[] {
       body: '在退票截止時間前，可自行點「退票」取消訂單，釋出的票會自動回到票池供他人搶購。',
     },
     {
+      kind: 'sim',
+      screen: 'mytickets',
+      highlight: '[data-tour="ticket-transfer"]',
+      title: '④ 我的票卷 — 轉讓票券',
+      body: '無法出席嗎？點「轉讓給朋友」並輸入對方的 Email，即可將這張票轉讓出去。對方會在「我的票卷」收到轉讓邀請，接受後票券即改為對方持有；送出邀請後、對方確認前，你都可以隨時取消轉讓。',
+    },
+    {
       kind: 'center',
       title: '導覽完成 🎉',
       body: '以上就是完整的購票流程！開賣時間一到，就能實際操作。祝你搶票順利，我們盛會見！',

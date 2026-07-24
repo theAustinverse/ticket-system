@@ -143,6 +143,9 @@ export function MyTicketsScreen() {
           <button type="button" className="danger-button" data-tour="ticket-refund">
             退票
           </button>
+          <div className="ticket-transfer-block" data-tour="ticket-transfer">
+            <button type="button">轉讓給朋友</button>
+          </div>
         </div>
       </div>
     </div>
