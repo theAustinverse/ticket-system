@@ -10,6 +10,7 @@ export function OrderPage() {
   const state = location.state as {
     queueToken?: string;
     registration?: RegistrationInfo;
+    quantity?: number;
   } | null;
   const queueToken = state?.queueToken;
   const registration = state?.registration;
@@ -17,9 +18,13 @@ export function OrderPage() {
   const navigate = useNavigate();
 
   const [ticketType, setTicketType] = useState<TicketType | null>(null);
-  const [quantity, setQuantity] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Group bundles always buy fixedQuantity; a multi-buy individual ticket
+  // (e.g. early-bird) carries the chosen quantity from RegistrationPage;
+  // every other ticket type is capped at 1 per order.
+  const quantity = ticketType?.fixedQuantity ?? state?.quantity ?? 1;
 
   useEffect(() => {
     if (!token) {
@@ -31,10 +36,12 @@ export function OrderPage() {
       return;
     }
     if (!ticketTypeId) return;
-    api.getTicketType(ticketTypeId).then((tt) => {
-      setTicketType(tt);
-      if (tt.fixedQuantity) setQuantity(tt.fixedQuantity);
-    });
+    api
+      .getTicketType(ticketTypeId)
+      .then(setTicketType)
+      .catch((err) =>
+        setError(err instanceof ApiError ? err.message : '載入票種資料失敗，請重新整理再試一次'),
+      );
   }, [ticketTypeId, token, queueToken, registration, navigate]);
 
   async function handleSubmit() {
@@ -74,21 +81,18 @@ export function OrderPage() {
     <div className="page page-narrow">
       <h1>確認訂單</h1>
       <p>
-        <strong>{ticketType.name}</strong> · NT$
+        <strong>{ticketType.name}</strong>
+        {ticketType.batch && ` · ${ticketType.batch.name}`} · NT$
         {ticketType.price.toLocaleString()} / 張
       </p>
-      <label>
-        購買張數
-        <input
-          type="number"
-          min={1}
-          value={quantity}
-          disabled={!!ticketType.fixedQuantity}
-          onChange={(e) => setQuantity(Number(e.target.value))}
-        />
-      </label>
-      {ticketType.fixedQuantity && (
-        <p className="hint">此票種每次限購 {ticketType.fixedQuantity} 張</p>
+      {ticketType.fixedQuantity ? (
+        <p className="hint">
+          此票種為團體票，一次購買固定 {ticketType.fixedQuantity} 張（含您本人）
+        </p>
+      ) : quantity > 1 ? (
+        <p className="hint">本次購買 {quantity} 張</p>
+      ) : (
+        <p className="hint">本次購買 1 張</p>
       )}
       <p>總金額：NT$ {(ticketType.price * quantity).toLocaleString()}</p>
 
@@ -99,6 +103,9 @@ export function OrderPage() {
         LINE ID：{registration.registrantLineId} · 電話：
         {registration.registrantPhone}
       </p>
+      {registration.buyingForFamily && (
+        <p className="hint">以上為代訂人（您本人）的識別資料，非實際到場親友</p>
+      )}
       {registration.groupMembers && (
         <>
           <p>
@@ -107,9 +114,28 @@ export function OrderPage() {
             {registration.groupLeaderPhone}）
           </p>
           <p className="hint">
-            成員名單：{registration.groupMembers.join('、')}
+            其餘成員名單：
+            {registration.groupMembers
+              .map((m) => m.name || '（未填寫）')
+              .join('、')}
           </p>
         </>
+      )}
+      {registration.companions && registration.companions.length > 0 && (
+        <>
+          <p className="hint">
+            {registration.buyingForFamily ? '代訂親友' : '同行親友'}：
+            {registration.companions
+              .map(
+                (c, i) =>
+                  `第${i + (registration.buyingForFamily ? 1 : 2)}張 ${c.name || '（未填寫）'}（${c.relationship}）／備註：${c.note}`,
+              )
+              .join('、')}
+          </p>
+        </>
+      )}
+      {(registration.childSeatCount ?? 0) > 0 && (
+        <p className="hint">兒童座椅需求：{registration.childSeatCount} 張（僅調查用，不另外收費）</p>
       )}
 
       {error && <p className="error">{error}</p>}
