@@ -12,6 +12,10 @@ import { QueueRoomModule } from './modules/queue-room/queue-room.module';
 import { OrderModule } from './modules/order/order.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AntiBotModule } from './modules/anti-bot/anti-bot.module';
+import { UserModule } from './modules/user/user.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { ChatModule } from './modules/chat/chat.module';
+import { AiImageModule } from './modules/ai-image/ai-image.module';
 
 @Module({
   imports: [
@@ -32,6 +36,10 @@ import { AntiBotModule } from './modules/anti-bot/anti-bot.module';
     OrderModule,
     AuthModule,
     AntiBotModule,
+    UserModule,
+    AdminModule,
+    ChatModule,
+    AiImageModule,
   ],
   controllers: [AppController],
   providers: [AppService],
