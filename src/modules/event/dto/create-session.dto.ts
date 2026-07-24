@@ -1,4 +1,4 @@
-import { IsDateString, IsString, MinLength } from 'class-validator';
+import { IsDateString, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateSessionDto {
   @IsString()
@@ -7,4 +7,9 @@ export class CreateSessionDto {
 
   @IsDateString()
   startTime: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  mapUrl?: string;
 }
