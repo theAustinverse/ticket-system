@@ -1,6 +1,17 @@
-import { Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { QueueRoomService } from './queue-room.service';
 import { RateLimit } from '../anti-bot/rate-limit.decorator';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { EnterQueueDto } from './dto/enter-queue.dto';
 
 @Controller('queue/:ticketTypeId')
 export class QueueRoomController {
@@ -8,8 +19,17 @@ export class QueueRoomController {
 
   @Post('enter')
   @RateLimit(3, 5)
-  async enter(@Param('ticketTypeId') ticketTypeId: string) {
-    const token = await this.queueRoomService.enter(ticketTypeId);
+  @UseGuards(JwtAuthGuard)
+  async enter(
+    @Req() req: any,
+    @Param('ticketTypeId') ticketTypeId: string,
+    @Body() dto: EnterQueueDto,
+  ) {
+    const token = await this.queueRoomService.enter(
+      ticketTypeId,
+      req.user.userId,
+      dto.passcode,
+    );
     return { token };
   }
 

@@ -1,8 +1,17 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { randomUUID } from 'crypto';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module';
+import { PrismaService } from '../../prisma/prisma.service';
+
+/**
+ * Not secret-grade — just a speed bump so someone who only holds
+ * individual-ticket eligibility doesn't wander into the group-ticket queue
+ * by mistake. Every order still records who bought what for admin review.
+ */
+const GROUP_TICKET_PASSCODE =
+  process.env.GROUP_TICKET_PASSCODE ?? '142857';
 
 /**
  * Target sustained admission throughput, independent of how often the tick
@@ -29,7 +38,10 @@ export class QueueRoomService {
   private readonly logger = new Logger(QueueRoomService.name);
   private readonly lastAdmitAt = new Map<string, number>();
 
-  constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
+  constructor(
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly prisma: PrismaService,
+  ) {}
 
   private queueKey(ticketTypeId: string) {
     return `queue:${ticketTypeId}`;
@@ -39,8 +51,34 @@ export class QueueRoomService {
     return `admitted:${ticketTypeId}:${token}`;
   }
 
-  /** Enrolls a new participant into the waiting line and returns their token. */
-  async enter(ticketTypeId: string): Promise<string> {
+  /**
+   * Enrolls a new participant into the waiting line and returns their
+   * token. If the ticket type gates entry behind a passcode, the caller
+   * must supply the matching one first. Also requires the caller's profile
+   * (name/team/lineId/phone) to be fully filled in — an account with blank
+   * profile fields is otherwise indistinguishable from a half-abandoned
+   * registration by the time admin reviews it, so ticket eligibility is
+   * withheld until those fields are set.
+   */
+  async enter(ticketTypeId: string, userId: string, passcode?: string): Promise<string> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, team: true, lineId: true, phone: true },
+    });
+    if (!user?.name || !user?.team || !user?.lineId || !user?.phone) {
+      throw new ForbiddenException(
+        '請先至「設定」頁面完成個人資料填寫，才能進行搶票',
+      );
+    }
+
+    const ticketType = await this.prisma.ticketType.findUnique({
+      where: { id: ticketTypeId },
+      select: { requiresPasscode: true },
+    });
+    if (ticketType?.requiresPasscode && passcode !== GROUP_TICKET_PASSCODE) {
+      throw new ForbiddenException('Incorrect passcode');
+    }
+
     const token = randomUUID();
     await this.redis.zadd(this.queueKey(ticketTypeId), Date.now(), token);
     return token;
