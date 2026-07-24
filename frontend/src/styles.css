@@ -1012,6 +1012,15 @@ button:disabled {
   min-width: 0;
 }
 
+.transfer-admin-notice {
+  margin: 0.6rem 0;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid #f5a623;
+  background: rgba(245, 166, 35, 0.12);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 /* ---------- admin table: scrollable with a frozen header row ---------- */
 .admin-table-wrap {
   margin-top: 1.25rem;

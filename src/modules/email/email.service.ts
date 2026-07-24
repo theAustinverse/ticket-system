@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
 import type { GroupMember } from '../order/types/group-member';
 import type { Companion } from '../order/types/companion';
+import { TRANSFER_ADMIN_NOTICE } from '../order/order.constants';
 
 const FROM_ADDRESS = process.env.EMAIL_FROM ?? 'verify@mail.ts-annual-event.com';
 
@@ -170,6 +171,7 @@ export class EmailService {
           <h2>票券轉讓邀請</h2>
           <p>${escapeHtml(d.fromEmail)} 想將一張「${escapeHtml(d.ticketTypeName)}」轉讓給您。</p>
           <p>請登入系統，至「我的票卷」頁面查看並選擇接受或拒絕此邀請。</p>
+          <p style="margin-top: 16px; padding: 12px; background: #fff8e1; border-left: 4px solid #f5a623; color: #7a5c00;">${escapeHtml(TRANSFER_ADMIN_NOTICE)}</p>
         </div>
       `,
     });
@@ -177,6 +179,37 @@ export class EmailService {
     if (error) {
       this.logger.error(
         `Failed to send transfer invite email to ${email}: ${error.message}`,
+      );
+    }
+  }
+
+  async sendTransferSentNotice(
+    email: string,
+    d: { ticketTypeName: string; toEmail: string },
+  ): Promise<void> {
+    if (!this.resend) {
+      this.logger.warn(
+        `RESEND_API_KEY not set — skipping transfer sent notice email for ${email}`,
+      );
+      return;
+    }
+
+    const { error } = await this.resend.emails.send({
+      from: FROM_ADDRESS,
+      to: email,
+      subject: '【TS年度盛會】您已送出一筆票券轉讓邀請',
+      html: `
+        <div style="font-family: sans-serif; padding: 24px; color: #222;">
+          <h2>轉讓邀請已送出</h2>
+          <p>您將一張「${escapeHtml(d.ticketTypeName)}」轉讓給 ${escapeHtml(d.toEmail)} 的邀請已送出，等待對方確認。</p>
+          <p style="margin-top: 16px; padding: 12px; background: #fff8e1; border-left: 4px solid #f5a623; color: #7a5c00;">${escapeHtml(TRANSFER_ADMIN_NOTICE)}</p>
+        </div>
+      `,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to send transfer sent notice email to ${email}: ${error.message}`,
       );
     }
   }

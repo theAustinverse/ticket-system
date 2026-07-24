@@ -390,6 +390,10 @@ export class OrderService {
       ticketTypeName: order.ticketType.name,
       fromEmail: fromUser!.email,
     });
+    await this.emailService.sendTransferSentNotice(fromUser!.email, {
+      ticketTypeName: order.ticketType.name,
+      toEmail: toUser.email,
+    });
 
     return transfer;
   }

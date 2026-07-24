@@ -8,6 +8,10 @@ const REFUND_CUTOFF_DAYS = 7;
 const CANCELLABLE_STATUSES = ['PENDING', 'PAID'];
 const MEAL_OPTIONS = ['葷食', '素食'];
 
+/** Shown to both sides of a transfer while the early-bird batch is being reconciled by hand. */
+const TRANSFER_ADMIN_NOTICE =
+  '因早鳥波次搶票已結束，行政組進入訂單彙整階段，請有轉讓票卷者務必告知行政組夥伴，避免訂單轉讓不被承認，導致接收者的票卷不被承認，感謝配合。';
+
 interface MemberDraft {
   name: string;
   contact: string;
@@ -204,6 +208,7 @@ export function MyTicketsPage() {
       await api.transferOrder(token, orderId, toEmail);
       setTransferringId(null);
       reloadOrders();
+      window.alert(TRANSFER_ADMIN_NOTICE);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '轉讓邀請送出失敗');
     } finally {
@@ -268,6 +273,7 @@ export function MyTicketsPage() {
               <p className="hint">
                 {transfer.fromUser.email} 想將這張票轉讓給您
               </p>
+              <p className="transfer-admin-notice">{TRANSFER_ADMIN_NOTICE}</p>
               <div className="button-row">
                 <button
                   disabled={respondingTransferId === transfer.id}
@@ -460,6 +466,7 @@ export function MyTicketsPage() {
                     <p className="hint">
                       轉讓邀請已送出給 {order.transfers[0].toUser.email}，等待對方確認
                     </p>
+                    <p className="transfer-admin-notice">{TRANSFER_ADMIN_NOTICE}</p>
                     <button
                       className="link-button"
                       disabled={transferBusyId === order.id}
