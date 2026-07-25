@@ -4,7 +4,17 @@ import type { GroupMember } from '../order/types/group-member';
 import type { Companion } from '../order/types/companion';
 import { TRANSFER_ADMIN_NOTICE } from '../order/order.constants';
 
-const FROM_ADDRESS = process.env.EMAIL_FROM ?? 'verify@mail.ts-annual-event.com';
+const FROM_ADDRESS =
+  process.env.EMAIL_FROM ?? 'verify@mail.ts-annual-event.com';
+/**
+ * Where every ticket-transfer admin notice goes. The early-bird batch has
+ * already closed and been manually reconciled into a spreadsheet — any
+ * transfer after that point needs a human to fold it into that
+ * reconciliation, so the admin team asked to be emailed on every transfer
+ * rather than having to keep re-checking the app for new ones.
+ */
+const TRANSFER_ADMIN_EMAIL =
+  process.env.TRANSFER_ADMIN_EMAIL ?? 'lucy98112226424@gmail.com';
 
 /**
  * Every field below (name, LINE ID, meal preference, etc.) is user-supplied
@@ -71,7 +81,9 @@ export class EmailService {
     });
 
     if (error) {
-      this.logger.error(`Failed to send verification email to ${email}: ${error.message}`);
+      this.logger.error(
+        `Failed to send verification email to ${email}: ${error.message}`,
+      );
       throw new Error('Failed to send verification email');
     }
   }
@@ -210,6 +222,49 @@ export class EmailService {
     if (error) {
       this.logger.error(
         `Failed to send transfer sent notice email to ${email}: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Notifies the admin team every time a transfer is actually completed
+   * (the recipient accepted, so Order.userId changed) — the early-bird
+   * batch has already closed and been manually reconciled into a
+   * spreadsheet, so any transfer after that point needs a human to fold it
+   * in, and the admin team asked to be emailed rather than having to keep
+   * re-checking the app for new ones.
+   */
+  async sendTransferAdminNotice(d: {
+    fromName: string;
+    toName: string;
+    mealPreference: string;
+    buyingForFamily: boolean;
+  }): Promise<void> {
+    if (!this.resend) {
+      this.logger.warn(
+        'RESEND_API_KEY not set — skipping transfer admin notice email',
+      );
+      return;
+    }
+
+    const { error } = await this.resend.emails.send({
+      from: FROM_ADDRESS,
+      to: TRANSFER_ADMIN_EMAIL,
+      subject: '【TS年度盛會】票券轉讓通知',
+      html: `
+        <div style="font-family: sans-serif; padding: 24px; color: #222;">
+          <h2>📝轉讓表格📝</h2>
+          <p>・轉讓者姓名：${escapeHtml(d.fromName)}</p>
+          <p>・受讓者姓名：${escapeHtml(d.toName)}</p>
+          <p>・葷／素：${escapeHtml(d.mealPreference)}</p>
+          <p>・夥伴／親友：${d.buyingForFamily ? '親友' : '夥伴'}</p>
+        </div>
+      `,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to send transfer admin notice email: ${error.message}`,
       );
     }
   }

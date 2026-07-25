@@ -42,14 +42,22 @@ describe('OrderService', () => {
     groupMembers: makeMembers(10),
   };
 
+  let queueRoomService: any;
+
   beforeEach(() => {
     prisma = {
       order: {
         create: jest.fn(),
         findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn(),
       },
+      $transaction: jest.fn(),
       user: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'user-1', email: 'user@gmail.com' }),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'user-1', email: 'user@gmail.com' }),
       },
     };
     inventory = {
@@ -57,17 +65,35 @@ describe('OrderService', () => {
       releaseStock: jest.fn(),
       decrementGroupStock: jest.fn(),
       releaseGroupStock: jest.fn(),
+      claimGroupPurchase: jest.fn().mockResolvedValue(true),
+      releaseGroupPurchaseClaim: jest.fn().mockResolvedValue(undefined),
     };
     eventService = {
       findTicketType: jest.fn().mockResolvedValue(groupTicketType),
       assertOnSale: jest.fn().mockResolvedValue(undefined),
     };
-    emailService = { sendOrderConfirmation: jest.fn() };
-    service = new OrderService(prisma, inventory, eventService, emailService);
+    emailService = {
+      sendOrderConfirmation: jest.fn(),
+      sendTransferInvite: jest.fn(),
+      sendTransferSentNotice: jest.fn(),
+      sendTransferAdminNotice: jest.fn().mockResolvedValue(undefined),
+    };
+    queueRoomService = {
+      consumeAdmission: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new OrderService(
+      prisma,
+      inventory,
+      eventService,
+      emailService,
+      queueRoomService,
+    );
   });
 
   it('rejects orders before the ticket type sale batch has opened', async () => {
-    eventService.assertOnSale.mockRejectedValue(new SaleNotOpenError('tt-group'));
+    eventService.assertOnSale.mockRejectedValue(
+      new SaleNotOpenError('tt-group'),
+    );
     await expect(
       service.createOrder('user-1', { ticketTypeId: 'tt-group', quantity: 11 }),
     ).rejects.toThrow(BadRequestException);
@@ -105,11 +131,38 @@ describe('OrderService', () => {
   });
 
   it('rejects a second group-ticket order from the same user in the same session', async () => {
-    prisma.order.findFirst.mockResolvedValue({ id: 'order-existing' });
+    inventory.claimGroupPurchase.mockResolvedValue(false);
     await expect(
       service.createOrder('user-1', validGroupOrderDto),
     ).rejects.toThrow(BadRequestException);
     expect(inventory.decrementStock).not.toHaveBeenCalled();
+    expect(inventory.decrementGroupStock).not.toHaveBeenCalled();
+  });
+
+  it('releases the group-purchase claim if order creation fails after claiming it', async () => {
+    inventory.decrementStock.mockResolvedValue(0);
+    prisma.order.create.mockRejectedValue(new Error('db down'));
+    await expect(
+      service.createOrder('user-1', validGroupOrderDto),
+    ).rejects.toThrow('db down');
+    expect(inventory.claimGroupPurchase).toHaveBeenCalledWith(
+      'session-1',
+      'user-1',
+    );
+    expect(inventory.releaseGroupPurchaseClaim).toHaveBeenCalledWith(
+      'session-1',
+      'user-1',
+    );
+  });
+
+  it('consumes the queue admission token after a successful order', async () => {
+    inventory.decrementStock.mockResolvedValue(0);
+    prisma.order.create.mockResolvedValue({ id: 'order-1' });
+    await service.createOrder('user-1', validGroupOrderDto, 'queue-token-1');
+    expect(queueRoomService.consumeAdmission).toHaveBeenCalledWith(
+      'tt-group',
+      'queue-token-1',
+    );
   });
 
   it('surfaces insufficient stock as a BadRequestException', async () => {
@@ -266,10 +319,20 @@ describe('OrderService', () => {
     it('releases plain stock for a non-pooled ticket type', async () => {
       const order = makeCancellableOrder(groupTicketType);
       prisma.order.findUnique = jest.fn().mockResolvedValue(order);
-      prisma.order.update = jest.fn().mockResolvedValue({ ...order, status: 'CANCELLED' });
+      prisma.order.findUniqueOrThrow = jest
+        .fn()
+        .mockResolvedValue({ ...order, status: 'CANCELLED' });
       await service.cancelOrder('user-1', 'order-1');
+      expect(prisma.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-1', status: 'PAID' },
+        data: { status: 'CANCELLED' },
+      });
       expect(inventory.releaseStock).toHaveBeenCalledWith('tt-group', 11);
       expect(inventory.releaseGroupStock).not.toHaveBeenCalled();
+      expect(inventory.releaseGroupPurchaseClaim).toHaveBeenCalledWith(
+        'session-1',
+        'user-1',
+      );
     });
 
     it('releases via the shared pool + group counter for a pooled group ticket type', async () => {
@@ -280,7 +343,9 @@ describe('OrderService', () => {
       };
       const order = makeCancellableOrder(pooledTicketType);
       prisma.order.findUnique = jest.fn().mockResolvedValue(order);
-      prisma.order.update = jest.fn().mockResolvedValue({ ...order, status: 'CANCELLED' });
+      prisma.order.findUniqueOrThrow = jest
+        .fn()
+        .mockResolvedValue({ ...order, status: 'CANCELLED' });
       await service.cancelOrder('user-1', 'order-1');
       expect(inventory.releaseGroupStock).toHaveBeenCalledWith(
         'early-bird-pool',
@@ -290,7 +355,7 @@ describe('OrderService', () => {
       expect(inventory.releaseStock).not.toHaveBeenCalled();
     });
 
-    it('rejects cancellation once the ticket\'s own batch has closed (saleEndAt passed)', async () => {
+    it("rejects cancellation once the ticket's own batch has closed (saleEndAt passed)", async () => {
       const order = makeCancellableOrder(groupTicketType, {
         saleEndAt: new Date('2020-01-01T00:00:00Z'),
       });
@@ -300,6 +365,31 @@ describe('OrderService', () => {
       );
       expect(inventory.releaseStock).not.toHaveBeenCalled();
       expect(inventory.releaseGroupStock).not.toHaveBeenCalled();
+      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects cancellation if the order was already cancelled concurrently (double-cancel race)', async () => {
+      const order = makeCancellableOrder(groupTicketType);
+      prisma.order.findUnique = jest.fn().mockResolvedValue(order);
+      prisma.order.updateMany.mockResolvedValue({ count: 0 });
+      await expect(service.cancelOrder('user-1', 'order-1')).rejects.toThrow(
+        'cannot be cancelled',
+      );
+      expect(inventory.releaseStock).not.toHaveBeenCalled();
+    });
+
+    it('reverts the cancellation if releasing stock throws', async () => {
+      const order = makeCancellableOrder(groupTicketType);
+      prisma.order.findUnique = jest.fn().mockResolvedValue(order);
+      prisma.order.update = jest.fn().mockResolvedValue(order);
+      inventory.releaseStock.mockRejectedValue(new Error('redis down'));
+      await expect(service.cancelOrder('user-1', 'order-1')).rejects.toThrow(
+        'redis down',
+      );
+      expect(prisma.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { status: 'PAID' },
+      });
     });
 
     it('still allows cancellation when the batch has a saleEndAt in the future', async () => {
@@ -307,9 +397,74 @@ describe('OrderService', () => {
         saleEndAt: new Date('2099-06-01T00:00:00Z'),
       });
       prisma.order.findUnique = jest.fn().mockResolvedValue(order);
-      prisma.order.update = jest.fn().mockResolvedValue({ ...order, status: 'CANCELLED' });
+      prisma.order.update = jest
+        .fn()
+        .mockResolvedValue({ ...order, status: 'CANCELLED' });
       await service.cancelOrder('user-1', 'order-1');
       expect(inventory.releaseStock).toHaveBeenCalledWith('tt-group', 11);
+    });
+  });
+
+  describe('acceptTransfer', () => {
+    it('emails the admin team with the transfer details once accepted', async () => {
+      prisma.ticketTransfer = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'transfer-1',
+          orderId: 'order-1',
+          toUserId: 'user-2',
+          status: 'PENDING',
+          order: {
+            status: 'PAID',
+            mealPreference: '素食',
+            buyingForFamily: true,
+            ticketType: { batch: {} },
+          },
+          fromUser: { name: '王小明' },
+          toUser: { name: '陳小華' },
+        }),
+        update: jest.fn(),
+      };
+      prisma.$transaction = jest
+        .fn()
+        .mockResolvedValue([null, { id: 'order-1', userId: 'user-2' }]);
+
+      await service.acceptTransfer('user-2', 'transfer-1');
+
+      expect(emailService.sendTransferAdminNotice).toHaveBeenCalledWith({
+        fromName: '王小明',
+        toName: '陳小華',
+        mealPreference: '素食',
+        buyingForFamily: true,
+      });
+    });
+
+    it('does not fail the transfer if the admin notice email throws', async () => {
+      prisma.ticketTransfer = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'transfer-1',
+          orderId: 'order-1',
+          toUserId: 'user-2',
+          status: 'PENDING',
+          order: {
+            status: 'PAID',
+            mealPreference: '葷食',
+            buyingForFamily: false,
+            ticketType: { batch: {} },
+          },
+          fromUser: { name: null },
+          toUser: { name: null },
+        }),
+        update: jest.fn(),
+      };
+      prisma.$transaction = jest
+        .fn()
+        .mockResolvedValue([null, { id: 'order-1', userId: 'user-2' }]);
+      emailService.sendTransferAdminNotice.mockRejectedValue(
+        new Error('resend down'),
+      );
+
+      const result = await service.acceptTransfer('user-2', 'transfer-1');
+      expect(result).toEqual({ id: 'order-1', userId: 'user-2' });
     });
   });
 
@@ -330,7 +485,9 @@ describe('OrderService', () => {
         userId: 'user-1',
         registrantName: 'Leader',
       });
-      await expect(service.findOrder('someone-else', 'order-1')).rejects.toThrow();
+      await expect(
+        service.findOrder('someone-else', 'order-1'),
+      ).rejects.toThrow();
     });
 
     it('throws NotFoundException for a nonexistent order', async () => {
@@ -435,7 +592,12 @@ describe('OrderService', () => {
           ...baseDto,
           quantity: 2,
           companions: [
-            { name: 'John', relationship: '父母', mealPreference: '葷食', note: '測試備註' },
+            {
+              name: 'John',
+              relationship: '父母',
+              mealPreference: '葷食',
+              note: '測試備註',
+            },
           ],
         }),
       ).rejects.toThrow(BadRequestException);
@@ -443,7 +605,11 @@ describe('OrderService', () => {
 
     it('rejects a registrantName that is not Chinese characters only', async () => {
       await expect(
-        service.createOrder('user-1', { ...baseDto, registrantName: 'John', quantity: 1 }),
+        service.createOrder('user-1', {
+          ...baseDto,
+          registrantName: 'John',
+          quantity: 1,
+        }),
       ).rejects.toThrow(BadRequestException);
     });
 

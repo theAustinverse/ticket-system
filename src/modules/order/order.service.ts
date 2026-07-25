@@ -14,6 +14,7 @@ import {
 } from '../inventory/inventory.service';
 import { EventService, SaleNotOpenError } from '../event/event.service';
 import { EmailService } from '../email/email.service';
+import { QueueRoomService } from '../queue-room/queue-room.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { REFUND_CUTOFF_DAYS } from './order.constants';
 import type { GroupMember } from './types/group-member';
@@ -35,7 +36,10 @@ function usesGroupCap(ticketType: {
   return ticketType.fixedQuantity != null && ticketType.maxGroupOrders != null;
 }
 
-function stockKeyFor(ticketType: { id: string; sharedStockKey: string | null }): string {
+function stockKeyFor(ticketType: {
+  id: string;
+  sharedStockKey: string | null;
+}): string {
   return ticketType.sharedStockKey ?? ticketType.id;
 }
 
@@ -46,6 +50,7 @@ export class OrderService {
     private readonly inventory: InventoryService,
     private readonly eventService: EventService,
     private readonly emailService: EmailService,
+    private readonly queueRoomService: QueueRoomService,
   ) {}
 
   /**
@@ -53,7 +58,7 @@ export class OrderService {
    * is no in-app payment step. A created order is immediately the final
    * successful state (PAID), and a confirmation email goes out right away.
    */
-  async createOrder(userId: string, dto: CreateOrderDto) {
+  async createOrder(userId: string, dto: CreateOrderDto, queueToken?: string) {
     // A JWT can be structurally valid (e.g. the back office's admin token)
     // without corresponding to a real customer account. Fail clearly here
     // instead of letting it surface as a raw FK-constraint 500 later.
@@ -64,9 +69,7 @@ export class OrderService {
       );
     }
 
-    const ticketType = await this.eventService.findTicketType(
-      dto.ticketTypeId,
-    );
+    const ticketType = await this.eventService.findTicketType(dto.ticketTypeId);
 
     try {
       await this.eventService.assertOnSale(dto.ticketTypeId);
@@ -77,189 +80,222 @@ export class OrderService {
       throw error;
     }
 
-    if (ticketType.fixedQuantity !== null) {
-      // One group bundle per person per session — otherwise a single buyer
-      // could snipe multiple 11-seat bundles (especially now that the
-      // member list can be filled in any time before the next wave opens,
-      // making speculative hoarding easier), starving other buyers of a
-      // ticket type outright.
-      const existingGroupOrder = await this.prisma.order.findFirst({
-        where: {
+    // One group bundle per person per session — otherwise a single buyer
+    // could snipe multiple 11-seat bundles (especially now that the member
+    // list can be filled in any time before the next wave opens, making
+    // speculative hoarding easier), starving other buyers of a ticket type
+    // outright. Everything from here to the order actually persisting is
+    // wrapped so any failure releases this claim — a plain "does a PAID
+    // order already exist" read followed by a separate create would be a
+    // check-then-act race: two concurrent requests from the same user could
+    // both pass the read before either has written, both decrement stock,
+    // and both succeed. The atomic Redis claim below closes that race
+    // instead of merely narrowing it.
+    let groupClaimAcquired = false;
+    try {
+      if (ticketType.fixedQuantity !== null) {
+        const claimed = await this.inventory.claimGroupPurchase(
+          ticketType.sessionId,
           userId,
-          status: 'PAID',
-          ticketType: { fixedQuantity: { not: null }, sessionId: ticketType.sessionId },
-        },
-      });
-      if (existingGroupOrder) {
-        throw new BadRequestException(
-          'You may only purchase one group ticket bundle per person',
         );
-      }
-
-      if (dto.quantity !== ticketType.fixedQuantity) {
-        throw new BadRequestException(
-          `This ticket type must be purchased in bundles of ${ticketType.fixedQuantity}`,
-        );
-      }
-      if (
-        !dto.groupLeaderName ||
-        !dto.groupLeaderLineId ||
-        !dto.groupLeaderPhone
-      ) {
-        throw new BadRequestException(
-          'Group leader name, LINE ID, and phone are required for this ticket type',
-        );
-      }
-      // Fields may be left blank at order time — the deadline to fill them
-      // all in is "before the next wave opens" (see StockSweepService), not
-      // "at the moment of purchase" — but the array must still reserve
-      // exactly one slot per *other* member (the leader is the 11th seat,
-      // already covered by the groupLeader* fields above).
-      const requiredMembers = otherMembersCount(ticketType.fixedQuantity);
-      if (!dto.groupMembers || dto.groupMembers.length !== requiredMembers) {
-        throw new BadRequestException(
-          `groupMembers must list exactly ${requiredMembers} entries (blank fields are allowed for now)`,
-        );
-      }
-    } else if (ticketType.maxQuantityPerOrder) {
-      // This specific ticket type explicitly allows buying more than 1 per
-      // order on behalf of family members (e.g. the early-bird individual
-      // ticket) — names must be Chinese-only, regardless of quantity.
-      const maxQuantity = ticketType.maxQuantityPerOrder;
-      if (dto.quantity < 1 || dto.quantity > maxQuantity) {
-        throw new BadRequestException(
-          `This ticket type allows 1 to ${maxQuantity} tickets per order`,
-        );
-      }
-
-      // buyingForFamily: every ticket (including #1) is on behalf of a
-      // family member, so registrantName is just administrative buyer
-      // identity (silently taken from the account profile) — not a
-      // user-facing "ticket name" field, so it's exempt from the
-      // Chinese-only check here (each companion name below still enforces it).
-      if (!dto.buyingForFamily && !CHINESE_NAME_REGEX.test(dto.registrantName)) {
-        throw new BadRequestException(
-          'registrantName must be Chinese characters only',
-        );
-      }
-
-      const requiredCompanions = dto.buyingForFamily
-        ? dto.quantity
-        : dto.quantity - 1;
-      if (requiredCompanions > 0) {
-        if (!dto.companions || dto.companions.length !== requiredCompanions) {
+        if (!claimed) {
           throw new BadRequestException(
-            `companions must list exactly ${requiredCompanions} entries`,
+            'You may only purchase one group ticket bundle per person',
           );
         }
-        for (const companion of dto.companions) {
-          if (!CHINESE_NAME_REGEX.test(companion.name)) {
+        groupClaimAcquired = true;
+
+        if (dto.quantity !== ticketType.fixedQuantity) {
+          throw new BadRequestException(
+            `This ticket type must be purchased in bundles of ${ticketType.fixedQuantity}`,
+          );
+        }
+        if (
+          !dto.groupLeaderName ||
+          !dto.groupLeaderLineId ||
+          !dto.groupLeaderPhone
+        ) {
+          throw new BadRequestException(
+            'Group leader name, LINE ID, and phone are required for this ticket type',
+          );
+        }
+        // Fields may be left blank at order time — the deadline to fill them
+        // all in is "before the next wave opens" (see StockSweepService), not
+        // "at the moment of purchase" — but the array must still reserve
+        // exactly one slot per *other* member (the leader is the 11th seat,
+        // already covered by the groupLeader* fields above).
+        const requiredMembers = otherMembersCount(ticketType.fixedQuantity);
+        if (!dto.groupMembers || dto.groupMembers.length !== requiredMembers) {
+          throw new BadRequestException(
+            `groupMembers must list exactly ${requiredMembers} entries (blank fields are allowed for now)`,
+          );
+        }
+      } else if (ticketType.maxQuantityPerOrder) {
+        // This specific ticket type explicitly allows buying more than 1 per
+        // order on behalf of family members (e.g. the early-bird individual
+        // ticket) — names must be Chinese-only, regardless of quantity.
+        const maxQuantity = ticketType.maxQuantityPerOrder;
+        if (dto.quantity < 1 || dto.quantity > maxQuantity) {
+          throw new BadRequestException(
+            `This ticket type allows 1 to ${maxQuantity} tickets per order`,
+          );
+        }
+
+        // buyingForFamily: every ticket (including #1) is on behalf of a
+        // family member, so registrantName is just administrative buyer
+        // identity (silently taken from the account profile) — not a
+        // user-facing "ticket name" field, so it's exempt from the
+        // Chinese-only check here (each companion name below still enforces it).
+        if (
+          !dto.buyingForFamily &&
+          !CHINESE_NAME_REGEX.test(dto.registrantName)
+        ) {
+          throw new BadRequestException(
+            'registrantName must be Chinese characters only',
+          );
+        }
+
+        const requiredCompanions = dto.buyingForFamily
+          ? dto.quantity
+          : dto.quantity - 1;
+        if (requiredCompanions > 0) {
+          if (!dto.companions || dto.companions.length !== requiredCompanions) {
             throw new BadRequestException(
-              'companion name must be Chinese characters only',
+              `companions must list exactly ${requiredCompanions} entries`,
             );
           }
+          for (const companion of dto.companions) {
+            if (!CHINESE_NAME_REGEX.test(companion.name)) {
+              throw new BadRequestException(
+                'companion name must be Chinese characters only',
+              );
+            }
+          }
+        }
+      } else {
+        // Ordinary individual ticket type: capped at 1 per order.
+        if (dto.quantity !== 1) {
+          throw new BadRequestException(
+            'This ticket type allows only 1 ticket per order',
+          );
         }
       }
-    } else {
-      // Ordinary individual ticket type: capped at 1 per order.
-      if (dto.quantity !== 1) {
-        throw new BadRequestException(
-          'This ticket type allows only 1 ticket per order',
-        );
-      }
-    }
 
-    const stockKey = stockKeyFor(ticketType);
-    try {
-      if (usesGroupCap(ticketType)) {
-        await this.inventory.decrementGroupStock(
-          stockKey,
-          ticketType.id,
-          dto.quantity,
-          ticketType.maxGroupOrders!,
-        );
-      } else {
-        await this.inventory.decrementStock(stockKey, dto.quantity);
+      const stockKey = stockKeyFor(ticketType);
+      try {
+        if (usesGroupCap(ticketType)) {
+          await this.inventory.decrementGroupStock(
+            stockKey,
+            ticketType.id,
+            dto.quantity,
+            ticketType.maxGroupOrders!,
+          );
+        } else {
+          await this.inventory.decrementStock(stockKey, dto.quantity);
+        }
+      } catch (error) {
+        if (
+          error instanceof InsufficientStockError ||
+          error instanceof StockNotInitializedError
+        ) {
+          throw new BadRequestException(error.message);
+        }
+        if (error instanceof GroupOrderCapReachedError) {
+          throw new BadRequestException(
+            'The group ticket bundle cap has been reached',
+          );
+        }
+        throw error;
       }
+
+      const totalAmount = ticketType.price * dto.quantity;
+
+      let order;
+      try {
+        order = await this.prisma.order.create({
+          data: {
+            userId,
+            ticketTypeId: dto.ticketTypeId,
+            quantity: dto.quantity,
+            totalAmount,
+            status: 'PAID',
+            registrantName: dto.registrantName,
+            registrantTeam: dto.registrantTeam,
+            registrantLineId: dto.registrantLineId,
+            registrantPhone: dto.registrantPhone,
+            mealPreference: dto.mealPreference,
+            groupLeaderName: dto.groupLeaderName,
+            groupLeaderLineId: dto.groupLeaderLineId,
+            groupLeaderPhone: dto.groupLeaderPhone,
+            groupMembers: dto.groupMembers as unknown as object[],
+            companions: dto.companions as unknown as object[],
+            buyingForFamily: dto.buyingForFamily ?? false,
+            childSeatCount: dto.childSeatCount ?? 0,
+          },
+        });
+      } catch (error) {
+        // Roll back the reservation if persisting the order fails.
+        if (usesGroupCap(ticketType)) {
+          await this.inventory.releaseGroupStock(
+            stockKey,
+            ticketType.id,
+            dto.quantity,
+          );
+        } else {
+          await this.inventory.releaseStock(stockKey, dto.quantity);
+        }
+        throw error;
+      }
+
+      const isLoadTest =
+        process.env.LOAD_TEST_MODE === 'true' &&
+        /^loadtest\d+@gmail\.com$/i.test(user.email);
+
+      // Best-effort: a failed confirmation email shouldn't fail the order
+      // that already succeeded. Skipped for synthetic load-test accounts,
+      // same reasoning as the registration-code bypass in AuthService.
+      if (!isLoadTest) {
+        await this.emailService.sendOrderConfirmation(user.email, {
+          orderId: order.id,
+          ticketTypeName: ticketType.name,
+          quantity: order.quantity,
+          totalAmount: order.totalAmount,
+          registrantName: order.registrantName,
+          registrantTeam: order.registrantTeam,
+          registrantLineId: order.registrantLineId,
+          registrantPhone: order.registrantPhone,
+          mealPreference: order.mealPreference,
+          groupLeaderName: order.groupLeaderName,
+          groupLeaderLineId: order.groupLeaderLineId,
+          groupLeaderPhone: order.groupLeaderPhone,
+          groupMembers: order.groupMembers as GroupMember[] | null,
+          companions: order.companions as unknown as Companion[] | null,
+          buyingForFamily: order.buyingForFamily,
+          childSeatCount: order.childSeatCount,
+        });
+      }
+
+      // Spend the admission — otherwise it stays valid for the rest of its
+      // TTL and the same admitted queue token can be replayed against this
+      // endpoint in a loop, letting one admitted buyer take far more than
+      // their share while everyone else is still waiting in line. Best-effort:
+      // the order has already succeeded, so a failure here shouldn't fail the
+      // request (the token will still expire on its own via its TTL).
+      if (queueToken) {
+        await this.queueRoomService
+          .consumeAdmission(dto.ticketTypeId, queueToken)
+          .catch(() => {});
+      }
+
+      return order;
     } catch (error) {
-      if (
-        error instanceof InsufficientStockError ||
-        error instanceof StockNotInitializedError
-      ) {
-        throw new BadRequestException(error.message);
-      }
-      if (error instanceof GroupOrderCapReachedError) {
-        throw new BadRequestException(
-          'The group ticket bundle cap has been reached',
-        );
+      if (groupClaimAcquired) {
+        await this.inventory
+          .releaseGroupPurchaseClaim(ticketType.sessionId, userId)
+          .catch(() => {});
       }
       throw error;
     }
-
-    const totalAmount = ticketType.price * dto.quantity;
-
-    let order;
-    try {
-      order = await this.prisma.order.create({
-        data: {
-          userId,
-          ticketTypeId: dto.ticketTypeId,
-          quantity: dto.quantity,
-          totalAmount,
-          status: 'PAID',
-          registrantName: dto.registrantName,
-          registrantTeam: dto.registrantTeam,
-          registrantLineId: dto.registrantLineId,
-          registrantPhone: dto.registrantPhone,
-          mealPreference: dto.mealPreference,
-          groupLeaderName: dto.groupLeaderName,
-          groupLeaderLineId: dto.groupLeaderLineId,
-          groupLeaderPhone: dto.groupLeaderPhone,
-          groupMembers: dto.groupMembers as unknown as object[],
-          companions: dto.companions as unknown as object[],
-          buyingForFamily: dto.buyingForFamily ?? false,
-          childSeatCount: dto.childSeatCount ?? 0,
-        },
-      });
-    } catch (error) {
-      // Roll back the reservation if persisting the order fails.
-      if (usesGroupCap(ticketType)) {
-        await this.inventory.releaseGroupStock(stockKey, ticketType.id, dto.quantity);
-      } else {
-        await this.inventory.releaseStock(stockKey, dto.quantity);
-      }
-      throw error;
-    }
-
-    const isLoadTest =
-      process.env.LOAD_TEST_MODE === 'true' &&
-      /^loadtest\d+@gmail\.com$/i.test(user.email);
-
-    // Best-effort: a failed confirmation email shouldn't fail the order
-    // that already succeeded. Skipped for synthetic load-test accounts,
-    // same reasoning as the registration-code bypass in AuthService.
-    if (!isLoadTest) {
-      await this.emailService.sendOrderConfirmation(user.email, {
-        orderId: order.id,
-        ticketTypeName: ticketType.name,
-        quantity: order.quantity,
-        totalAmount: order.totalAmount,
-        registrantName: order.registrantName,
-        registrantTeam: order.registrantTeam,
-        registrantLineId: order.registrantLineId,
-        registrantPhone: order.registrantPhone,
-        mealPreference: order.mealPreference,
-        groupLeaderName: order.groupLeaderName,
-        groupLeaderLineId: order.groupLeaderLineId,
-        groupLeaderPhone: order.groupLeaderPhone,
-        groupMembers: order.groupMembers as GroupMember[] | null,
-        companions: order.companions as unknown as Companion[] | null,
-        buyingForFamily: order.buyingForFamily,
-        childSeatCount: order.childSeatCount,
-      });
-    }
-
-    return order;
   }
 
   /** Only the order's owner may view it — order ids are otherwise a bare lookup key, not a capability token. */
@@ -369,7 +405,9 @@ export class OrderService {
       );
     }
 
-    const fromUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    const fromUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
     const toUser = await this.prisma.user.findUnique({
       where: { email: toEmail },
     });
@@ -413,9 +451,14 @@ export class OrderService {
   async acceptTransfer(userId: string, transferId: string) {
     const transfer = await this.prisma.ticketTransfer.findUnique({
       where: { id: transferId },
-      include: { order: { include: { ticketType: { include: { batch: true } } } } },
+      include: {
+        order: { include: { ticketType: { include: { batch: true } } } },
+        fromUser: { select: { name: true } },
+        toUser: { select: { name: true } },
+      },
     });
-    if (!transfer) throw new NotFoundException(`Transfer ${transferId} not found`);
+    if (!transfer)
+      throw new NotFoundException(`Transfer ${transferId} not found`);
     if (transfer.toUserId !== userId) {
       throw new ForbiddenException('This transfer is not addressed to you');
     }
@@ -436,6 +479,20 @@ export class OrderService {
         data: { userId },
       }),
     ]);
+
+    // Best-effort: the early-bird batch has already closed and been
+    // manually reconciled into a spreadsheet, so the admin team needs to
+    // hear about every completed transfer to fold it in by hand — a failed
+    // notice shouldn't fail a transfer that already succeeded.
+    await this.emailService
+      .sendTransferAdminNotice({
+        fromName: transfer.fromUser.name ?? '（未填寫）',
+        toName: transfer.toUser.name ?? '（未填寫）',
+        mealPreference: transfer.order.mealPreference,
+        buyingForFamily: transfer.order.buyingForFamily,
+      })
+      .catch(() => {});
+
     return updatedOrder;
   }
 
@@ -444,7 +501,12 @@ export class OrderService {
   }
 
   async cancelTransfer(userId: string, transferId: string) {
-    return this.respondToTransfer(userId, transferId, 'fromUserId', 'CANCELLED');
+    return this.respondToTransfer(
+      userId,
+      transferId,
+      'fromUserId',
+      'CANCELLED',
+    );
   }
 
   private async respondToTransfer(
@@ -456,7 +518,8 @@ export class OrderService {
     const transfer = await this.prisma.ticketTransfer.findUnique({
       where: { id: transferId },
     });
-    if (!transfer) throw new NotFoundException(`Transfer ${transferId} not found`);
+    if (!transfer)
+      throw new NotFoundException(`Transfer ${transferId} not found`);
     if (transfer[ownerField] !== userId) {
       throw new ForbiddenException('This transfer does not belong to you');
     }
@@ -508,21 +571,47 @@ export class OrderService {
       );
     }
 
-    const updated = await this.prisma.order.update({
-      where: { id: orderId },
+    // Conditional on status still being PAID — a plain read-then-update
+    // would let the same order get cancelled twice concurrently (e.g. a
+    // double-click, or a retried request), releasing its stock back to the
+    // pool twice for a single seat.
+    const { count } = await this.prisma.order.updateMany({
+      where: { id: orderId, status: 'PAID' },
       data: { status: 'CANCELLED' },
     });
-    const stockKey = stockKeyFor(order.ticketType);
-    if (usesGroupCap(order.ticketType)) {
-      await this.inventory.releaseGroupStock(
-        stockKey,
-        order.ticketType.id,
-        order.quantity,
-      );
-    } else {
-      await this.inventory.releaseStock(stockKey, order.quantity);
+    if (count === 0) {
+      throw new BadRequestException(`Order ${orderId} cannot be cancelled`);
     }
 
-    return updated;
+    const stockKey = stockKeyFor(order.ticketType);
+    try {
+      if (usesGroupCap(order.ticketType)) {
+        await this.inventory.releaseGroupStock(
+          stockKey,
+          order.ticketType.id,
+          order.quantity,
+        );
+      } else {
+        await this.inventory.releaseStock(stockKey, order.quantity);
+      }
+      if (order.ticketType.fixedQuantity !== null) {
+        await this.inventory.releaseGroupPurchaseClaim(
+          order.ticketType.sessionId,
+          userId,
+        );
+      }
+    } catch (error) {
+      // Best-effort revert so a failed stock release doesn't silently leave
+      // the order CANCELLED with its seat never returned to the pool. A
+      // hard crash between these two awaits (rather than a caught error)
+      // can't be recovered from here — closing that residual gap needs a
+      // cross-store transaction/outbox, out of scope for this fix.
+      await this.prisma.order
+        .update({ where: { id: orderId }, data: { status: 'PAID' } })
+        .catch(() => {});
+      throw error;
+    }
+
+    return this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
   }
 }
