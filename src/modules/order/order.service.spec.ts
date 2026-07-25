@@ -406,7 +406,7 @@ describe('OrderService', () => {
   });
 
   describe('acceptTransfer', () => {
-    it('emails the admin team with the transfer details once accepted', async () => {
+    it("emails the admin team with the recipient's reviewed/edited notice details once accepted", async () => {
       prisma.ticketTransfer = {
         findUnique: jest.fn().mockResolvedValue({
           id: 'transfer-1',
@@ -419,8 +419,6 @@ describe('OrderService', () => {
             buyingForFamily: true,
             ticketType: { batch: {} },
           },
-          fromUser: { name: '王小明' },
-          toUser: { name: '陳小華' },
         }),
         update: jest.fn(),
       };
@@ -428,13 +426,18 @@ describe('OrderService', () => {
         .fn()
         .mockResolvedValue([null, { id: 'order-1', userId: 'user-2' }]);
 
-      await service.acceptTransfer('user-2', 'transfer-1');
+      await service.acceptTransfer('user-2', 'transfer-1', {
+        fromName: '王小明（已編輯）',
+        toName: '陳小華',
+        mealPreference: '葷食',
+        buyingForFamily: false,
+      });
 
       expect(emailService.sendTransferAdminNotice).toHaveBeenCalledWith({
-        fromName: '王小明',
+        fromName: '王小明（已編輯）',
         toName: '陳小華',
-        mealPreference: '素食',
-        buyingForFamily: true,
+        mealPreference: '葷食',
+        buyingForFamily: false,
       });
     });
 
@@ -451,8 +454,6 @@ describe('OrderService', () => {
             buyingForFamily: false,
             ticketType: { batch: {} },
           },
-          fromUser: { name: null },
-          toUser: { name: null },
         }),
         update: jest.fn(),
       };
@@ -463,7 +464,12 @@ describe('OrderService', () => {
         new Error('resend down'),
       );
 
-      const result = await service.acceptTransfer('user-2', 'transfer-1');
+      const result = await service.acceptTransfer('user-2', 'transfer-1', {
+        fromName: '王小明',
+        toName: '陳小華',
+        mealPreference: '葷食',
+        buyingForFamily: false,
+      });
       expect(result).toEqual({ id: 'order-1', userId: 'user-2' });
     });
   });

@@ -1021,6 +1021,46 @@ button:disabled {
   line-height: 1.5;
 }
 
+/* ---------- modal: transfer-accept review form ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(6, 4, 3, 0.72);
+}
+
+.modal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 1.5rem 1.5rem 1.25rem;
+  background: var(--void-2);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.modal-card h2 {
+  margin: 0 0 0.2rem;
+  font-family: 'Noto Serif TC', serif;
+}
+
+.modal-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+  color: var(--paper-dim);
+}
+
 /* ---------- admin table: scrollable with a frozen header row ---------- */
 .admin-table-wrap {
   margin-top: 1.25rem;

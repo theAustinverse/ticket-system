@@ -4,6 +4,9 @@ import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import type { GroupMember, IncomingTransfer, OrderWithSession } from '../api/types';
 
+const BUYER_TYPE_OPTIONS = ['夥伴', '親友'] as const;
+type BuyerType = (typeof BUYER_TYPE_OPTIONS)[number];
+
 const REFUND_CUTOFF_DAYS = 7;
 const CANCELLABLE_STATUSES = ['PENDING', 'PAID'];
 const MEAL_OPTIONS = ['葷食', '素食'];
@@ -91,6 +94,12 @@ export function MyTicketsPage() {
   const [transferEmail, setTransferEmail] = useState('');
   const [transferBusyId, setTransferBusyId] = useState<string | null>(null);
   const [respondingTransferId, setRespondingTransferId] = useState<string | null>(null);
+  const [myName, setMyName] = useState('');
+  const [reviewingTransfer, setReviewingTransfer] = useState<IncomingTransfer | null>(null);
+  const [reviewFromName, setReviewFromName] = useState('');
+  const [reviewToName, setReviewToName] = useState('');
+  const [reviewMeal, setReviewMeal] = useState('');
+  const [reviewBuyerType, setReviewBuyerType] = useState<BuyerType | ''>('');
 
   function reloadOrders() {
     if (!token) return;
@@ -117,6 +126,10 @@ export function MyTicketsPage() {
     }
     reloadOrders();
     reloadIncomingTransfers();
+    api
+      .getProfile(token)
+      .then((profile) => setMyName(profile.name ?? ''))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, navigate]);
 
@@ -230,12 +243,41 @@ export function MyTicketsPage() {
     }
   }
 
-  async function handleAcceptIncoming(transferId: string) {
-    if (!token) return;
+  /** Opens the review form instead of accepting immediately — the recipient checks/edits what goes into the admin reconciliation notice before it's locked in. */
+  function startReviewAccept(transfer: IncomingTransfer) {
+    setReviewingTransfer(transfer);
+    setReviewFromName(transfer.fromUser.name ?? '');
+    setReviewToName(myName);
+    setReviewMeal(transfer.order.mealPreference);
+    setReviewBuyerType('');
+    setError(null);
+  }
+
+  function cancelReviewAccept() {
+    setReviewingTransfer(null);
+  }
+
+  async function handleConfirmAccept() {
+    if (!token || !reviewingTransfer) return;
+    if (!reviewFromName.trim() || !reviewToName.trim() || !reviewMeal.trim()) {
+      setError('請完整填寫轉讓者姓名、受讓者姓名與用餐需求');
+      return;
+    }
+    if (!reviewBuyerType) {
+      setError('請選擇夥伴／親友');
+      return;
+    }
+    const transferId = reviewingTransfer.id;
     setRespondingTransferId(transferId);
     setError(null);
     try {
-      await api.acceptTransfer(token, transferId);
+      await api.acceptTransfer(token, transferId, {
+        fromName: reviewFromName.trim(),
+        toName: reviewToName.trim(),
+        mealPreference: reviewMeal.trim(),
+        buyingForFamily: reviewBuyerType === '親友',
+      });
+      setReviewingTransfer(null);
       reloadIncomingTransfers();
       reloadOrders();
     } catch (err) {
@@ -277,9 +319,9 @@ export function MyTicketsPage() {
               <div className="button-row">
                 <button
                   disabled={respondingTransferId === transfer.id}
-                  onClick={() => handleAcceptIncoming(transfer.id)}
+                  onClick={() => startReviewAccept(transfer)}
                 >
-                  {respondingTransferId === transfer.id ? '處理中…' : '接受'}
+                  接受
                 </button>
                 <button
                   className="link-button"
@@ -511,6 +553,64 @@ export function MyTicketsPage() {
           </div>
         ))}
       </div>
+      {reviewingTransfer && (
+        <div className="modal-overlay" onClick={cancelReviewAccept}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2>📝轉讓表格📝</h2>
+            <label>
+              轉讓者姓名
+              <input
+                value={reviewFromName}
+                onChange={(e) => setReviewFromName(e.target.value)}
+              />
+            </label>
+            <label>
+              受讓者姓名
+              <input
+                value={reviewToName}
+                onChange={(e) => setReviewToName(e.target.value)}
+              />
+            </label>
+            <label>
+              葷／素
+              <input
+                value={reviewMeal}
+                onChange={(e) => setReviewMeal(e.target.value)}
+              />
+            </label>
+            <label>
+              夥伴／親友
+              <select
+                value={reviewBuyerType}
+                onChange={(e) =>
+                  setReviewBuyerType(e.target.value as BuyerType | '')
+                }
+              >
+                <option value="">請選擇</option>
+                {BUYER_TYPE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {error && <p className="error">{error}</p>}
+            <div className="button-row">
+              <button
+                disabled={respondingTransferId === reviewingTransfer.id}
+                onClick={handleConfirmAccept}
+              >
+                {respondingTransferId === reviewingTransfer.id
+                  ? '處理中…'
+                  : '確認'}
+              </button>
+              <button className="link-button" onClick={cancelReviewAccept}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

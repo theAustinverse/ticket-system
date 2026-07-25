@@ -447,14 +447,27 @@ export class OrderService {
     });
   }
 
-  /** Recipient accepts — this is the only point where Order.userId actually changes. */
-  async acceptTransfer(userId: string, transferId: string) {
+  /**
+   * Recipient accepts — this is the only point where Order.userId actually
+   * changes. `notice` is what the recipient reviewed/edited in the accept
+   * confirmation form; it's used for the admin reconciliation email as-is
+   * (not re-derived from the DB), so a corrected name/meal preference
+   * actually reaches the admin team instead of a stale one.
+   */
+  async acceptTransfer(
+    userId: string,
+    transferId: string,
+    notice: {
+      fromName: string;
+      toName: string;
+      mealPreference: string;
+      buyingForFamily: boolean;
+    },
+  ) {
     const transfer = await this.prisma.ticketTransfer.findUnique({
       where: { id: transferId },
       include: {
         order: { include: { ticketType: { include: { batch: true } } } },
-        fromUser: { select: { name: true } },
-        toUser: { select: { name: true } },
       },
     });
     if (!transfer)
@@ -484,14 +497,7 @@ export class OrderService {
     // manually reconciled into a spreadsheet, so the admin team needs to
     // hear about every completed transfer to fold it in by hand — a failed
     // notice shouldn't fail a transfer that already succeeded.
-    await this.emailService
-      .sendTransferAdminNotice({
-        fromName: transfer.fromUser.name ?? '（未填寫）',
-        toName: transfer.toUser.name ?? '（未填寫）',
-        mealPreference: transfer.order.mealPreference,
-        buyingForFamily: transfer.order.buyingForFamily,
-      })
-      .catch(() => {});
+    await this.emailService.sendTransferAdminNotice(notice).catch(() => {});
 
     return updatedOrder;
   }

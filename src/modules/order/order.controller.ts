@@ -12,6 +12,7 @@ import { OrderService } from './order.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateGroupMembersDto } from './dto/update-group-members.dto';
 import { CreateTransferDto } from './dto/create-transfer.dto';
+import { AcceptTransferDto } from './dto/accept-transfer.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdmissionGuard } from '../queue-room/admission.guard';
 import { RateLimit } from '../anti-bot/rate-limit.decorator';
@@ -85,8 +86,12 @@ export class OrderController {
 
   @Post('transfers/:transferId/accept')
   @UseGuards(JwtAuthGuard)
-  acceptTransfer(@Req() req: any, @Param('transferId') transferId: string) {
-    return this.orderService.acceptTransfer(req.user.userId, transferId);
+  acceptTransfer(
+    @Req() req: any,
+    @Param('transferId') transferId: string,
+    @Body() dto: AcceptTransferDto,
+  ) {
+    return this.orderService.acceptTransfer(req.user.userId, transferId, dto);
   }
 
   @Post('transfers/:transferId/reject')

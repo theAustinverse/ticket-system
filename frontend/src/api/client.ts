@@ -157,10 +157,20 @@ export const api = {
       headers: authHeader(authToken),
     }),
 
-  acceptTransfer: (authToken: string, transferId: string) =>
+  acceptTransfer: (
+    authToken: string,
+    transferId: string,
+    notice: {
+      fromName: string;
+      toName: string;
+      mealPreference: string;
+      buyingForFamily: boolean;
+    },
+  ) =>
     request<Order>(`/orders/transfers/${transferId}/accept`, {
       method: 'POST',
       headers: authHeader(authToken),
+      body: JSON.stringify(notice),
     }),
 
   rejectTransfer: (authToken: string, transferId: string) =>
