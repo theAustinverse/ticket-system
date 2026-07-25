@@ -54,6 +54,8 @@ model Session {
   mapUrl      String?
   batches     SaleBatch[]
   ticketTypes TicketType[]
+
+  @@index([eventId])
 }
 
 /// A sales wave (e.g. 第一波/第二波/第三波). saleStartAt is nullable because
@@ -78,6 +80,10 @@ model SaleBatch {
   /// receiving the sweep.
   stockSweepDone Boolean   @default(false)
   ticketTypes TicketType[]
+
+  @@index([sessionId])
+  /// Matches StockSweepService's polling query (due batches: not yet swept, past their close time).
+  @@index([stockSweepDone, saleEndAt])
 }
 
 model TicketType {
@@ -123,6 +129,9 @@ model TicketType {
   requiresPasscode Boolean @default(false)
   createdAt     DateTime   @default(now())
   orders        Order[]
+
+  @@index([sessionId])
+  @@index([batchId])
 }
 
 model Order {
@@ -171,6 +180,9 @@ model Order {
   /// Internal note the admin writes in the back office; never shown to users.
   adminNote         String?
   transfers         TicketTransfer[]
+
+  @@index([userId])
+  @@index([ticketTypeId])
 }
 
 enum OrderStatus {
@@ -195,6 +207,10 @@ model TicketTransfer {
   status      TicketTransferStatus @default(PENDING)
   createdAt   DateTime             @default(now())
   respondedAt DateTime?
+
+  @@index([orderId])
+  @@index([fromUserId])
+  @@index([toUserId])
 }
 
 enum TicketTransferStatus {
@@ -214,4 +230,6 @@ model ChatMessage {
   authorName String
   content    String
   createdAt  DateTime @default(now())
+
+  @@index([userId])
 }

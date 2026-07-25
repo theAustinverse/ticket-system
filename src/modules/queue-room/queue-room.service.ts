@@ -149,11 +149,34 @@ export class QueueRoomService {
    */
   @Interval(ADMIT_INTERVAL_MS)
   private async admitBatches() {
-    const queueKeys = await this.redis.keys('queue:*');
+    const queueKeys = await this.scanKeys('queue:*');
     for (const queueKey of queueKeys) {
       const ticketTypeId = queueKey.slice('queue:'.length);
       await this.admitNext(ticketTypeId);
     }
+  }
+
+  /**
+   * Like KEYS, but non-blocking — KEYS scans the whole keyspace in one
+   * shot and stalls Redis's single event loop while it does, which matters
+   * here since this runs every second in production. SCAN walks the
+   * keyspace in small cursor-based batches instead.
+   */
+  private async scanKeys(pattern: string): Promise<string[]> {
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [nextCursor, batch] = await this.redis.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        100,
+      );
+      cursor = nextCursor;
+      keys.push(...batch);
+    } while (cursor !== '0');
+    return keys;
   }
 
   /**

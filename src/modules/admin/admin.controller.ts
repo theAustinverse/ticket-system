@@ -14,6 +14,7 @@ import type { Response } from 'express';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
+import { RateLimit } from '../anti-bot/rate-limit.decorator';
 import { UpdateOrderNoteDto } from './dto/update-order-note.dto';
 import { BulkDeleteUsersDto } from './dto/bulk-delete-users.dto';
 import { BulkDeleteOrdersDto } from './dto/bulk-delete-orders.dto';
@@ -34,6 +35,7 @@ export class AdminController {
   }
 
   @Post('users/delete-bulk')
+  @RateLimit(5, 60)
   bulkDeleteUsers(@Body() dto: BulkDeleteUsersDto) {
     return this.adminService.bulkDeleteUsers(dto.ids);
   }
@@ -59,11 +61,13 @@ export class AdminController {
   }
 
   @Post('orders/delete-bulk')
+  @RateLimit(5, 60)
   bulkDeleteOrders(@Body() dto: BulkDeleteOrdersDto) {
     return this.adminService.bulkDeleteOrders(dto.ids);
   }
 
   @Post('reset-stock')
+  @RateLimit(5, 60)
   resetStock() {
     return this.adminService.resetStock();
   }
@@ -79,6 +83,7 @@ export class AdminController {
   }
 
   @Get('export')
+  @RateLimit(10, 60)
   async exportOrders(@Res() res: Response, @Query('team') team?: string) {
     const buffer = await this.adminService.exportOrdersXlsx(team);
     // Team names may contain non-ASCII (Chinese) characters, which Node's
