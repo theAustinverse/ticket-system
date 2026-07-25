@@ -10,8 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
  * individual-ticket eligibility doesn't wander into the group-ticket queue
  * by mistake. Every order still records who bought what for admin review.
  */
-const GROUP_TICKET_PASSCODE =
-  process.env.GROUP_TICKET_PASSCODE ?? '142857';
+const GROUP_TICKET_PASSCODE = process.env.GROUP_TICKET_PASSCODE ?? '142857';
 
 /**
  * Target sustained admission throughput, independent of how often the tick
@@ -27,6 +26,12 @@ const ADMIT_INTERVAL_MS = 1000;
 const MAX_ADMIT_PER_TICK = ADMIT_RATE_PER_SECOND * 10;
 /** How long an admitted token stays valid before it must re-queue. */
 const ADMITTED_TTL_SECONDS = 5 * 60;
+/**
+ * How long a token's owner binding survives — must comfortably outlast the
+ * longest realistic wait (queued + admitted) so it doesn't expire out from
+ * under someone still waiting in line.
+ */
+const OWNER_TTL_SECONDS = 30 * 60;
 
 export type QueueStatus =
   | { state: 'admitted' }
@@ -51,6 +56,11 @@ export class QueueRoomService {
     return `admitted:${ticketTypeId}:${token}`;
   }
 
+  /** Binds a queue token to whichever user requested it, so it can't be forwarded/shared to let someone else skip the line. */
+  private ownerKey(ticketTypeId: string, token: string) {
+    return `owner:${ticketTypeId}:${token}`;
+  }
+
   /**
    * Enrolls a new participant into the waiting line and returns their
    * token. If the ticket type gates entry behind a passcode, the caller
@@ -60,7 +70,11 @@ export class QueueRoomService {
    * registration by the time admin reviews it, so ticket eligibility is
    * withheld until those fields are set.
    */
-  async enter(ticketTypeId: string, userId: string, passcode?: string): Promise<string> {
+  async enter(
+    ticketTypeId: string,
+    userId: string,
+    passcode?: string,
+  ): Promise<string> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { name: true, team: true, lineId: true, phone: true },
@@ -81,13 +95,26 @@ export class QueueRoomService {
 
     const token = randomUUID();
     await this.redis.zadd(this.queueKey(ticketTypeId), Date.now(), token);
+    await this.redis.set(
+      this.ownerKey(ticketTypeId, token),
+      userId,
+      'EX',
+      OWNER_TTL_SECONDS,
+    );
     return token;
   }
 
-  async getStatus(
+  /** True only if `token` was issued to `userId` — otherwise a forwarded/shared token could let someone else use it to skip the line. */
+  async isOwnedBy(
     ticketTypeId: string,
     token: string,
-  ): Promise<QueueStatus> {
+    userId: string,
+  ): Promise<boolean> {
+    const owner = await this.redis.get(this.ownerKey(ticketTypeId, token));
+    return owner === userId;
+  }
+
+  async getStatus(ticketTypeId: string, token: string): Promise<QueueStatus> {
     const admitted = await this.redis.exists(
       this.admittedKey(ticketTypeId, token),
     );
@@ -103,6 +130,17 @@ export class QueueRoomService {
       this.admittedKey(ticketTypeId, token),
     );
     return exists === 1;
+  }
+
+  /**
+   * Consumes an admitted token after it's been spent on one successful
+   * order — otherwise it stays valid for the rest of its TTL (up to 5
+   * minutes) and the same admission can be replayed against the order API
+   * in a loop, letting one admitted buyer take far more than their share
+   * while everyone else is still waiting in line.
+   */
+  async consumeAdmission(ticketTypeId: string, token: string): Promise<void> {
+    await this.redis.del(this.admittedKey(ticketTypeId, token));
   }
 
   /**

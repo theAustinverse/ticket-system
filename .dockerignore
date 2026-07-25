@@ -5,3 +5,5 @@ coverage
 .git
 *.log
 *.tsbuildinfo
+.env
+.env.*

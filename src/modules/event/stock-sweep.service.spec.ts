@@ -31,7 +31,7 @@ describe('StockSweepService', () => {
       saleBatch: {
         findMany: jest.fn(),
         findUnique: jest.fn(),
-        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       ticketType: {
         update: jest.fn(),
@@ -41,11 +41,23 @@ describe('StockSweepService', () => {
       },
     };
     inventory = {
-      getStock: jest.fn(),
-      initStock: jest.fn(),
+      takeAllStock: jest.fn(),
       releaseStock: jest.fn(),
     };
     service = new StockSweepService(prisma, inventory);
+  });
+
+  it('does nothing if the sweep claim was already taken (already swept, or a concurrent sweep in progress)', async () => {
+    prisma.saleBatch.updateMany.mockResolvedValue({ count: 0 });
+
+    await (service as any).sweepFromBatch('wave-1');
+
+    expect(prisma.saleBatch.updateMany).toHaveBeenCalledWith({
+      where: { id: 'wave-1', stockSweepDone: false },
+      data: { stockSweepDone: true },
+    });
+    expect(prisma.saleBatch.findUnique).not.toHaveBeenCalled();
+    expect(inventory.takeAllStock).not.toHaveBeenCalled();
   });
 
   it("sweeps the closing batch's unsold group-ticket capacity into the next batch's non-group ticket", async () => {
@@ -73,12 +85,15 @@ describe('StockSweepService', () => {
 
     prisma.saleBatch.findUnique.mockResolvedValue(closingBatch);
     prisma.saleBatch.findMany.mockResolvedValue([closingBatch, nextBatch]);
-    inventory.getStock.mockResolvedValue(44);
+    inventory.takeAllStock.mockResolvedValue(44);
 
     await (service as any).sweepFromBatch('wave-1');
 
-    expect(inventory.getStock).toHaveBeenCalledWith('group-1');
-    expect(inventory.initStock).toHaveBeenCalledWith('group-1', 0);
+    expect(prisma.saleBatch.updateMany).toHaveBeenCalledWith({
+      where: { id: 'wave-1', stockSweepDone: false },
+      data: { stockSweepDone: true },
+    });
+    expect(inventory.takeAllStock).toHaveBeenCalledWith('group-1');
     expect(inventory.releaseStock).toHaveBeenCalledWith('general-2', 44);
     expect(prisma.ticketType.update).toHaveBeenCalledWith({
       where: { id: 'group-1' },
@@ -88,28 +103,20 @@ describe('StockSweepService', () => {
       where: { id: 'general-2' },
       data: { totalQuantity: { increment: 44 } },
     });
-    expect(prisma.saleBatch.update).toHaveBeenCalledWith({
-      where: { id: 'wave-1' },
-      data: { stockSweepDone: true },
-    });
   });
 
-  it('does nothing but marks swept when this is the last batch in its session', async () => {
+  it('does nothing further when this is the last batch in its session', async () => {
     const lastBatch = batch({ id: 'wave-1' });
     prisma.saleBatch.findUnique.mockResolvedValue(lastBatch);
     prisma.saleBatch.findMany.mockResolvedValue([lastBatch]);
 
     await (service as any).sweepFromBatch('wave-1');
 
-    expect(inventory.getStock).not.toHaveBeenCalled();
+    expect(inventory.takeAllStock).not.toHaveBeenCalled();
     expect(inventory.releaseStock).not.toHaveBeenCalled();
-    expect(prisma.saleBatch.update).toHaveBeenCalledWith({
-      where: { id: 'wave-1' },
-      data: { stockSweepDone: true },
-    });
   });
 
-  it('skips the transfer but still marks swept when the next batch has no non-group ticket type', async () => {
+  it('skips the transfer when the next batch has no non-group ticket type', async () => {
     const groupType = ticketType({ id: 'group-1', fixedQuantity: 11 });
     const closingBatch = batch({
       id: 'wave-1',
@@ -131,12 +138,8 @@ describe('StockSweepService', () => {
 
     await (service as any).sweepFromBatch('wave-1');
 
-    expect(inventory.getStock).not.toHaveBeenCalled();
+    expect(inventory.takeAllStock).not.toHaveBeenCalled();
     expect(inventory.releaseStock).not.toHaveBeenCalled();
-    expect(prisma.saleBatch.update).toHaveBeenCalledWith({
-      where: { id: 'wave-1' },
-      data: { stockSweepDone: true },
-    });
   });
 
   it('does not transfer anything when the closing batch has no leftover group stock', async () => {
@@ -155,11 +158,10 @@ describe('StockSweepService', () => {
 
     prisma.saleBatch.findUnique.mockResolvedValue(closingBatch);
     prisma.saleBatch.findMany.mockResolvedValue([closingBatch, nextBatch]);
-    inventory.getStock.mockResolvedValue(0);
+    inventory.takeAllStock.mockResolvedValue(0);
 
     await (service as any).sweepFromBatch('wave-1');
 
-    expect(inventory.initStock).not.toHaveBeenCalled();
     expect(inventory.releaseStock).not.toHaveBeenCalled();
     expect(prisma.ticketType.update).not.toHaveBeenCalled();
   });
@@ -206,8 +208,8 @@ describe('StockSweepService', () => {
         },
         { id: 'order-2', groupMembers: ['Legacy Filled', ''] },
       ]);
-      // First getStock call (after releasing blanks) reports pool remaining.
-      inventory.getStock.mockResolvedValue(170);
+      // takeAllStock call (after releasing blanks) reports pool remaining.
+      inventory.takeAllStock.mockResolvedValue(170);
 
       await (service as any).sweepFromBatch('wave-1');
 
@@ -215,7 +217,7 @@ describe('StockSweepService', () => {
       // legacy-string-shaped seat from order-2.
       expect(inventory.releaseStock).toHaveBeenCalledWith('early-bird-pool', 2);
       expect(inventory.releaseStock).toHaveBeenCalledWith('early-bird-pool', 1);
-      expect(inventory.initStock).toHaveBeenCalledWith('early-bird-pool', 0);
+      expect(inventory.takeAllStock).toHaveBeenCalledWith('early-bird-pool');
       expect(inventory.releaseStock).toHaveBeenCalledWith('general-2', 170);
       expect(prisma.ticketType.update).toHaveBeenCalledWith({
         where: { id: 'general-2' },
@@ -237,7 +239,10 @@ describe('StockSweepService', () => {
         createdAt: new Date('2026-01-01T00:00:00Z'),
         ticketTypes: [pooledIndividualType],
       });
-      const targetType = ticketType({ id: 'general-2', createdAt: new Date('2026-02-01T00:00:00Z') });
+      const targetType = ticketType({
+        id: 'general-2',
+        createdAt: new Date('2026-02-01T00:00:00Z'),
+      });
       const nextBatch = batch({
         id: 'wave-2',
         createdAt: new Date('2026-02-01T00:00:00Z'),
@@ -246,11 +251,10 @@ describe('StockSweepService', () => {
 
       prisma.saleBatch.findUnique.mockResolvedValue(closingBatch);
       prisma.saleBatch.findMany.mockResolvedValue([closingBatch, nextBatch]);
-      inventory.getStock.mockResolvedValue(0);
+      inventory.takeAllStock.mockResolvedValue(0);
 
       await (service as any).sweepFromBatch('wave-1');
 
-      expect(inventory.initStock).not.toHaveBeenCalled();
       expect(inventory.releaseStock).not.toHaveBeenCalled();
       expect(prisma.ticketType.update).not.toHaveBeenCalled();
     });

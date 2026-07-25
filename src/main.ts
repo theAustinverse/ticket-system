@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -7,6 +8,16 @@ import { AppModule } from './app.module';
 import { corsOrigin } from './common/cors-origin';
 
 async function bootstrap() {
+  // LOAD_TEST_MODE disables the anti-bot rate limiter entirely (see
+  // RateLimitGuard) — a single global switch with no other safeguard, so a
+  // config-management slip that leaves it set in production would silently
+  // remove all request throttling. Loud at boot so that's hard to miss.
+  if (process.env.LOAD_TEST_MODE === 'true') {
+    new Logger('Bootstrap').warn(
+      'LOAD_TEST_MODE=true — the anti-bot rate limiter is DISABLED for all routes. This must never be set in production.',
+    );
+  }
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   // Standard hardening HTTP response headers (HSTS, nosniff, frame-deny,
   // etc.). This is a JSON API that serves no HTML, so helmet's default CSP

@@ -24,7 +24,11 @@ export class OrderController {
   @RateLimit(5, 10)
   @UseGuards(JwtAuthGuard, AdmissionGuard)
   createOrder(@Req() req: any, @Body() dto: CreateOrderDto) {
-    return this.orderService.createOrder(req.user.userId, dto);
+    return this.orderService.createOrder(
+      req.user.userId,
+      dto,
+      req.headers['x-queue-token'],
+    );
   }
 
   @Get('mine')
@@ -69,6 +73,7 @@ export class OrderController {
   }
 
   @Post(':id/transfer')
+  @RateLimit(5, 60)
   @UseGuards(JwtAuthGuard)
   createTransfer(
     @Req() req: any,

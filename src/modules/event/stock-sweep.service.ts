@@ -8,7 +8,9 @@ import type { GroupMember } from '../order/types/group-member';
 const SWEEP_CHECK_INTERVAL_MS = 60_000;
 
 /** Tolerates the legacy plain-string member shape (see admin.service.ts/MyTicketsPage.tsx). */
-function isBlankMember(member: GroupMember | string | null | undefined): boolean {
+function isBlankMember(
+  member: GroupMember | string | null | undefined,
+): boolean {
   if (!member) return true;
   if (typeof member === 'string') return !member.trim();
   return !member.name?.trim();
@@ -22,9 +24,11 @@ function isBlankMember(member: GroupMember | string | null | undefined): boolean
  * Wave order is inferred from SaleBatch.createdAt within the same session
  * (earliest = wave 1), and the released capacity lands on the earliest
  * non-group ticket type in the next batch. Each batch is swept at most once,
- * guarded by SaleBatch.stockSweepDone (set on the batch being swept FROM),
- * so this is safe to poll repeatedly. A batch with no saleEndAt never
- * triggers a sweep on its own.
+ * guarded by an atomic claim on SaleBatch.stockSweepDone (flipped false ->
+ * true by a conditional update before any sweep work starts, on the batch
+ * being swept FROM) — safe against both repeated polling and two overlapping
+ * ticks/instances racing to sweep the same batch. A batch with no saleEndAt
+ * never triggers a sweep on its own.
  *
  * Two independent sources of leftover capacity from the closing wave:
  * - A plain (non-pooled) group ticket type's unsold bundles.
@@ -58,6 +62,18 @@ export class StockSweepService {
   }
 
   private async sweepFromBatch(batchId: string) {
+    // Atomically claim the sweep before doing any work — a plain
+    // "stockSweepDone === false" read followed by a separate write (the old
+    // markSwept-at-the-end approach) lets two overlapping ticks, or two
+    // horizontally-scaled instances, both see the flag unset and both sweep
+    // the same batch, double-releasing its leftover capacity into the next
+    // wave. Only the caller that actually flips the flag proceeds.
+    const claim = await this.prisma.saleBatch.updateMany({
+      where: { id: batchId, stockSweepDone: false },
+      data: { stockSweepDone: true },
+    });
+    if (claim.count === 0) return;
+
     const batch = await this.prisma.saleBatch.findUnique({
       where: { id: batchId },
       include: { ticketTypes: true },
@@ -73,15 +89,15 @@ export class StockSweepService {
       include: { ticketTypes: true },
     });
     const index = siblingBatches.findIndex((b) => b.id === batchId);
-    const nextBatch = index >= 0 && index < siblingBatches.length - 1
-      ? siblingBatches[index + 1]
-      : null;
+    const nextBatch =
+      index >= 0 && index < siblingBatches.length - 1
+        ? siblingBatches[index + 1]
+        : null;
 
     if (!nextBatch) {
       this.logger.warn(
         `Batch ${batch.name} (${batchId}) closed but there is no next wave to sweep leftover capacity into; skipping sweep.`,
       );
-      await this.markSwept(batchId);
       return;
     }
 
@@ -93,7 +109,6 @@ export class StockSweepService {
       this.logger.warn(
         `Batch ${batch.name} (${batchId}) closed but ${nextBatch.name} has no non-group ticket type to sweep leftover capacity into; skipping sweep.`,
       );
-      await this.markSwept(batchId);
       return;
     }
 
@@ -103,10 +118,9 @@ export class StockSweepService {
       (tt) => tt.fixedQuantity !== null && !tt.sharedStockKey,
     );
     for (const groupType of plainGroupTypes) {
-      const remaining = await this.inventory.getStock(groupType.id);
-      if (!remaining || remaining <= 0) continue;
+      const remaining = await this.inventory.takeAllStock(groupType.id);
+      if (remaining <= 0) continue;
 
-      await this.inventory.initStock(groupType.id, 0);
       await this.inventory.releaseStock(target.id, remaining);
       await this.prisma.ticketType.update({
         where: { id: groupType.id },
@@ -124,12 +138,18 @@ export class StockSweepService {
     }
 
     const pooledTypes = batch.ticketTypes.filter((tt) => tt.sharedStockKey);
-    const poolKeys = new Set(pooledTypes.map((tt) => tt.sharedStockKey as string));
+    const poolKeys = new Set(
+      pooledTypes.map((tt) => tt.sharedStockKey as string),
+    );
     for (const poolKey of poolKeys) {
-      const typesInPool = pooledTypes.filter((tt) => tt.sharedStockKey === poolKey);
+      const typesInPool = pooledTypes.filter(
+        (tt) => tt.sharedStockKey === poolKey,
+      );
 
       let releasedFromBlankMembers = 0;
-      for (const groupType of typesInPool.filter((tt) => tt.fixedQuantity !== null)) {
+      for (const groupType of typesInPool.filter(
+        (tt) => tt.fixedQuantity !== null,
+      )) {
         const paidOrders = await this.prisma.order.findMany({
           where: { ticketTypeId: groupType.id, status: 'PAID' },
           select: { id: true, groupMembers: true },
@@ -151,9 +171,8 @@ export class StockSweepService {
         );
       }
 
-      const poolRemaining = await this.inventory.getStock(poolKey);
-      if (poolRemaining && poolRemaining > 0) {
-        await this.inventory.initStock(poolKey, 0);
+      const poolRemaining = await this.inventory.takeAllStock(poolKey);
+      if (poolRemaining > 0) {
         await this.inventory.releaseStock(target.id, poolRemaining);
         await this.prisma.ticketType.update({
           where: { id: target.id },
@@ -168,18 +187,10 @@ export class StockSweepService {
       }
     }
 
-    await this.markSwept(batchId);
     if (totalReleased === 0) {
       this.logger.log(
         `${batch.name} closed; no leftover capacity to sweep into ${nextBatch.name}.`,
       );
     }
-  }
-
-  private async markSwept(batchId: string) {
-    await this.prisma.saleBatch.update({
-      where: { id: batchId },
-      data: { stockSweepDone: true },
-    });
   }
 }
