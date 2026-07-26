@@ -95,7 +95,7 @@ export function MyTicketsPage() {
   const [transferBusyId, setTransferBusyId] = useState<string | null>(null);
   const [respondingTransferId, setRespondingTransferId] = useState<string | null>(null);
   const [myName, setMyName] = useState('');
-  const [reviewingTransfer, setReviewingTransfer] = useState<IncomingTransfer | null>(null);
+  const [reviewingTransferId, setReviewingTransferId] = useState<string | null>(null);
   const [reviewFromName, setReviewFromName] = useState('');
   const [reviewToName, setReviewToName] = useState('');
   const [reviewMeal, setReviewMeal] = useState('');
@@ -132,6 +132,15 @@ export function MyTicketsPage() {
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, navigate]);
+
+  // Pops the review-and-confirm window automatically whenever there's a
+  // pending incoming transfer and none is currently being reviewed — the
+  // recipient shouldn't have to know to go click "接受" to discover it.
+  useEffect(() => {
+    if (reviewingTransferId || incomingTransfers.length === 0) return;
+    startReviewAccept(incomingTransfers[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingTransfers, reviewingTransferId]);
 
   async function handleCancel(order: OrderWithSession) {
     if (!token) return;
@@ -243,9 +252,9 @@ export function MyTicketsPage() {
     }
   }
 
-  /** Opens the review form instead of accepting immediately — the recipient checks/edits what goes into the admin reconciliation notice before it's locked in. */
+  /** Expands the review form inline on this card instead of accepting immediately — the recipient checks/edits what goes into the admin reconciliation notice before it's locked in. */
   function startReviewAccept(transfer: IncomingTransfer) {
-    setReviewingTransfer(transfer);
+    setReviewingTransferId(transfer.id);
     setReviewFromName(transfer.fromUser.name ?? '');
     setReviewToName(myName);
     setReviewMeal(transfer.order.mealPreference);
@@ -254,11 +263,11 @@ export function MyTicketsPage() {
   }
 
   function cancelReviewAccept() {
-    setReviewingTransfer(null);
+    setReviewingTransferId(null);
   }
 
-  async function handleConfirmAccept() {
-    if (!token || !reviewingTransfer) return;
+  async function handleConfirmAccept(transferId: string) {
+    if (!token) return;
     if (!reviewFromName.trim() || !reviewToName.trim() || !reviewMeal.trim()) {
       setError('請完整填寫轉讓者姓名、受讓者姓名與用餐需求');
       return;
@@ -267,7 +276,6 @@ export function MyTicketsPage() {
       setError('請選擇夥伴／親友');
       return;
     }
-    const transferId = reviewingTransfer.id;
     setRespondingTransferId(transferId);
     setError(null);
     try {
@@ -277,7 +285,7 @@ export function MyTicketsPage() {
         mealPreference: reviewMeal.trim(),
         buyingForFamily: reviewBuyerType === '親友',
       });
-      setReviewingTransfer(null);
+      setReviewingTransferId(null);
       reloadIncomingTransfers();
       reloadOrders();
     } catch (err) {
@@ -293,6 +301,7 @@ export function MyTicketsPage() {
     setError(null);
     try {
       await api.rejectTransfer(token, transferId);
+      setReviewingTransferId(null);
       reloadIncomingTransfers();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '拒絕轉讓失敗');
@@ -315,22 +324,6 @@ export function MyTicketsPage() {
               <p className="hint">
                 {transfer.fromUser.email} 想將這張票轉讓給您
               </p>
-              <p className="transfer-admin-notice">{TRANSFER_ADMIN_NOTICE}</p>
-              <div className="button-row">
-                <button
-                  disabled={respondingTransferId === transfer.id}
-                  onClick={() => startReviewAccept(transfer)}
-                >
-                  接受
-                </button>
-                <button
-                  className="link-button"
-                  disabled={respondingTransferId === transfer.id}
-                  onClick={() => handleRejectIncoming(transfer.id)}
-                >
-                  拒絕
-                </button>
-              </div>
             </div>
           ))}
         </div>
@@ -553,64 +546,77 @@ export function MyTicketsPage() {
           </div>
         ))}
       </div>
-      {reviewingTransfer && (
-        <div className="modal-overlay" onClick={cancelReviewAccept}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <h2>📝轉讓表格📝</h2>
-            <label>
-              轉讓者姓名
-              <input
-                value={reviewFromName}
-                onChange={(e) => setReviewFromName(e.target.value)}
-              />
-            </label>
-            <label>
-              受讓者姓名
-              <input
-                value={reviewToName}
-                onChange={(e) => setReviewToName(e.target.value)}
-              />
-            </label>
-            <label>
-              葷／素
-              <input
-                value={reviewMeal}
-                onChange={(e) => setReviewMeal(e.target.value)}
-              />
-            </label>
-            <label>
-              夥伴／親友
-              <select
-                value={reviewBuyerType}
-                onChange={(e) =>
-                  setReviewBuyerType(e.target.value as BuyerType | '')
-                }
-              >
-                <option value="">請選擇</option>
-                {BUYER_TYPE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {error && <p className="error">{error}</p>}
-            <div className="button-row">
-              <button
-                disabled={respondingTransferId === reviewingTransfer.id}
-                onClick={handleConfirmAccept}
-              >
-                {respondingTransferId === reviewingTransfer.id
-                  ? '處理中…'
-                  : '確認'}
-              </button>
-              <button className="link-button" onClick={cancelReviewAccept}>
-                取消
-              </button>
+      {reviewingTransferId && (() => {
+        const transfer = incomingTransfers.find(
+          (t) => t.id === reviewingTransferId,
+        );
+        if (!transfer) return null;
+        return (
+          <div className="modal-overlay" onClick={cancelReviewAccept}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <h2>📝轉讓表格📝</h2>
+              <p className="hint">
+                {transfer.fromUser.email} 想將「{transfer.order.ticketType.name}
+                」轉讓給您
+              </p>
+              <p className="transfer-admin-notice">{TRANSFER_ADMIN_NOTICE}</p>
+              <label>
+                轉讓者姓名
+                <input
+                  value={reviewFromName}
+                  onChange={(e) => setReviewFromName(e.target.value)}
+                />
+              </label>
+              <label>
+                受讓者姓名
+                <input
+                  value={reviewToName}
+                  onChange={(e) => setReviewToName(e.target.value)}
+                />
+              </label>
+              <label>
+                葷／素
+                <input
+                  value={reviewMeal}
+                  onChange={(e) => setReviewMeal(e.target.value)}
+                />
+              </label>
+              <label>
+                夥伴／親友
+                <select
+                  value={reviewBuyerType}
+                  onChange={(e) =>
+                    setReviewBuyerType(e.target.value as BuyerType | '')
+                  }
+                >
+                  <option value="">請選擇</option>
+                  {BUYER_TYPE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {error && <p className="error">{error}</p>}
+              <div className="button-row">
+                <button
+                  disabled={respondingTransferId === transfer.id}
+                  onClick={() => handleConfirmAccept(transfer.id)}
+                >
+                  {respondingTransferId === transfer.id ? '處理中…' : '確認'}
+                </button>
+                <button
+                  className="link-button"
+                  disabled={respondingTransferId === transfer.id}
+                  onClick={() => handleRejectIncoming(transfer.id)}
+                >
+                  拒絕
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -1021,7 +1021,7 @@ button:disabled {
   line-height: 1.5;
 }
 
-/* ---------- modal: transfer-accept review form ---------- */
+/* ---------- modal: pops automatically when there's a pending incoming transfer to review ---------- */
 .modal-overlay {
   position: fixed;
   inset: 0;
