@@ -11,6 +11,7 @@ import {
 import { OrderService } from './order.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateGroupMembersDto } from './dto/update-group-members.dto';
+import { UpdateRegistrantInfoDto } from './dto/update-registrant-info.dto';
 import { CreateTransferDto } from './dto/create-transfer.dto';
 import { AcceptTransferDto } from './dto/accept-transfer.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -71,6 +72,16 @@ export class OrderController {
       dto.groupMembers,
       dto.childSeatCount,
     );
+  }
+
+  @Patch(':id/registrant-info')
+  @UseGuards(JwtAuthGuard)
+  updateRegistrantInfo(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateRegistrantInfoDto,
+  ) {
+    return this.orderService.updateRegistrantInfo(req.user.userId, id, dto);
   }
 
   @Post(':id/transfer')

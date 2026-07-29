@@ -361,6 +361,92 @@ export class OrderService {
     });
   }
 
+  /**
+   * Self-service edit of a non-group order's own registrant/companion info
+   * after purchase — group tickets use updateGroupMembers instead. Unlike
+   * that method, there's no batch-close cutoff here: nothing about this
+   * data affects stock or StockSweepService, so the only real deadline is
+   * the event itself having already happened.
+   */
+  async updateRegistrantInfo(
+    userId: string,
+    orderId: string,
+    dto: {
+      registrantName: string;
+      registrantTeam: string;
+      registrantLineId: string;
+      registrantPhone: string;
+      mealPreference: string;
+      companions?: Companion[];
+      childSeatCount?: number;
+    },
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { ticketType: { include: { session: true } } },
+    });
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`);
+    if (order.userId !== userId) {
+      throw new ForbiddenException('This order does not belong to you');
+    }
+    if (order.ticketType.fixedQuantity !== null) {
+      throw new BadRequestException(
+        'This is a group ticket — edit its member list instead',
+      );
+    }
+    if (Date.now() > order.ticketType.session.startTime.getTime()) {
+      throw new BadRequestException(
+        'This event has already happened — ticket info can no longer be edited',
+      );
+    }
+
+    if (
+      !order.buyingForFamily &&
+      !CHINESE_NAME_REGEX.test(dto.registrantName)
+    ) {
+      throw new BadRequestException(
+        'registrantName must be Chinese characters only',
+      );
+    }
+
+    if (order.ticketType.maxQuantityPerOrder) {
+      const requiredCompanions = order.buyingForFamily
+        ? order.quantity
+        : order.quantity - 1;
+      if (requiredCompanions > 0) {
+        if (!dto.companions || dto.companions.length !== requiredCompanions) {
+          throw new BadRequestException(
+            `companions must list exactly ${requiredCompanions} entries`,
+          );
+        }
+        for (const companion of dto.companions) {
+          if (!CHINESE_NAME_REGEX.test(companion.name)) {
+            throw new BadRequestException(
+              'companion name must be Chinese characters only',
+            );
+          }
+        }
+      }
+    }
+
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        registrantName: dto.registrantName,
+        registrantTeam: dto.registrantTeam,
+        registrantLineId: dto.registrantLineId,
+        registrantPhone: dto.registrantPhone,
+        mealPreference: dto.mealPreference,
+        ...(dto.companions !== undefined && {
+          companions: dto.companions as unknown as object[],
+        }),
+        ...(dto.childSeatCount !== undefined && {
+          childSeatCount: dto.childSeatCount,
+        }),
+      },
+    });
+  }
+
   listMyOrders(userId: string) {
     return this.prisma.order.findMany({
       where: { userId },

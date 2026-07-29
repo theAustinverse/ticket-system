@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { OrderService } from './order.service';
 import {
   GroupOrderCapReachedError,
@@ -297,6 +297,159 @@ describe('OrderService', () => {
         service.updateGroupMembers('user-1', 'order-1', makeMembers(10)),
       ).rejects.toThrow(BadRequestException);
       expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateRegistrantInfo', () => {
+    const individualTicketType = {
+      id: 'tt-individual',
+      fixedQuantity: null,
+      maxQuantityPerOrder: null,
+      session: { startTime: new Date('2099-01-01T00:00:00Z') },
+    };
+
+    const plainOrder = {
+      id: 'order-1',
+      userId: 'user-1',
+      quantity: 1,
+      buyingForFamily: false,
+      ticketType: individualTicketType,
+    };
+
+    const validDto = {
+      registrantName: '王小明',
+      registrantTeam: 'Team',
+      registrantLineId: 'line-id',
+      registrantPhone: '0900000000',
+      mealPreference: '葷食',
+    };
+
+    beforeEach(() => {
+      prisma.order.findUnique = jest.fn().mockResolvedValue(plainOrder);
+      prisma.order.update = jest.fn().mockResolvedValue({
+        ...plainOrder,
+        ...validDto,
+      });
+    });
+
+    it("updates a plain individual order's registrant info", async () => {
+      await service.updateRegistrantInfo('user-1', 'order-1', validDto);
+      expect(prisma.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: {
+          registrantName: '王小明',
+          registrantTeam: 'Team',
+          registrantLineId: 'line-id',
+          registrantPhone: '0900000000',
+          mealPreference: '葷食',
+        },
+      });
+    });
+
+    it('rejects when the order belongs to someone else', async () => {
+      await expect(
+        service.updateRegistrantInfo('someone-else', 'order-1', validDto),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects editing a group ticket order (use updateGroupMembers instead)', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        ...plainOrder,
+        ticketType: {
+          ...groupTicketType,
+          session: individualTicketType.session,
+        },
+      });
+      await expect(
+        service.updateRegistrantInfo('user-1', 'order-1', validDto),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects editing once the event has already happened', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        ...plainOrder,
+        ticketType: {
+          ...individualTicketType,
+          session: { startTime: new Date('2000-01-01T00:00:00Z') },
+        },
+      });
+      await expect(
+        service.updateRegistrantInfo('user-1', 'order-1', validDto),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-Chinese registrantName when not buying for family', async () => {
+      await expect(
+        service.updateRegistrantInfo('user-1', 'order-1', {
+          ...validDto,
+          registrantName: 'John',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    describe('multi-quantity individual ticket with companions', () => {
+      const familyOrder = {
+        id: 'order-2',
+        userId: 'user-1',
+        quantity: 3,
+        buyingForFamily: false,
+        ticketType: {
+          ...individualTicketType,
+          id: 'tt-family',
+          maxQuantityPerOrder: 5,
+        },
+      };
+
+      const companions = [
+        {
+          name: '陳小華',
+          relationship: '父母',
+          mealPreference: '葷食',
+          note: '無',
+        },
+        {
+          name: '林小美',
+          relationship: '子女',
+          mealPreference: '素食',
+          note: '無',
+        },
+      ];
+
+      beforeEach(() => {
+        prisma.order.findUnique.mockResolvedValue(familyOrder);
+        prisma.order.update.mockResolvedValue({ ...familyOrder, companions });
+      });
+
+      it('updates registrant info and companions together', async () => {
+        await service.updateRegistrantInfo('user-1', 'order-2', {
+          ...validDto,
+          companions,
+        });
+        expect(prisma.order.update).toHaveBeenCalledWith({
+          where: { id: 'order-2' },
+          data: expect.objectContaining({ companions }),
+        });
+      });
+
+      it('rejects a companions array of the wrong length', async () => {
+        await expect(
+          service.updateRegistrantInfo('user-1', 'order-2', {
+            ...validDto,
+            companions: [companions[0]],
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects a companion name that is not Chinese characters only', async () => {
+        await expect(
+          service.updateRegistrantInfo('user-1', 'order-2', {
+            ...validDto,
+            companions: [companions[0], { ...companions[1], name: 'John' }],
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
     });
   });
 

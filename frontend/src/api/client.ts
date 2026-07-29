@@ -3,6 +3,7 @@ import type {
   AdminTeamStat,
   AdminUser,
   ChatMessage,
+  Companion,
   EventDetail,
   EventSummary,
   GroupMember,
@@ -28,10 +29,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -143,6 +141,25 @@ export const api = {
       method: 'PATCH',
       headers: authHeader(authToken),
       body: JSON.stringify({ groupMembers, childSeatCount }),
+    }),
+
+  updateRegistrantInfo: (
+    authToken: string,
+    id: string,
+    payload: {
+      registrantName: string;
+      registrantTeam: string;
+      registrantLineId: string;
+      registrantPhone: string;
+      mealPreference: string;
+      companions?: Companion[];
+      childSeatCount?: number;
+    },
+  ) =>
+    request<Order>(`/orders/${id}/registrant-info`, {
+      method: 'PATCH',
+      headers: authHeader(authToken),
+      body: JSON.stringify(payload),
     }),
 
   transferOrder: (authToken: string, id: string, toEmail: string) =>
@@ -268,7 +285,9 @@ export const api = {
   },
 
   listChatMessages: (authToken: string) =>
-    request<ChatMessage[]>('/chat/messages', { headers: authHeader(authToken) }),
+    request<ChatMessage[]>('/chat/messages', {
+      headers: authHeader(authToken),
+    }),
 
   adminDeleteChatMessage: (authToken: string, id: string) =>
     request<{ deleted: boolean }>(`/admin/chat/${id}`, {
@@ -276,7 +295,11 @@ export const api = {
       headers: authHeader(authToken),
     }),
 
-  adminGenerateAiImage: (authToken: string, prompt: string, aspectRatio?: string) =>
+  adminGenerateAiImage: (
+    authToken: string,
+    prompt: string,
+    aspectRatio?: string,
+  ) =>
     request<{ mimeType: string; base64: string }>('/admin/ai-image/generate', {
       method: 'POST',
       headers: authHeader(authToken),

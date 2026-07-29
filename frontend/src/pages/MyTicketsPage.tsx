@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import type { GroupMember, IncomingTransfer, OrderWithSession } from '../api/types';
+import type {
+  Companion,
+  GroupMember,
+  IncomingTransfer,
+  OrderWithSession,
+} from '../api/types';
 
 const BUYER_TYPE_OPTIONS = ['夥伴', '親友'] as const;
 type BuyerType = (typeof BUYER_TYPE_OPTIONS)[number];
@@ -10,6 +15,7 @@ type BuyerType = (typeof BUYER_TYPE_OPTIONS)[number];
 const REFUND_CUTOFF_DAYS = 7;
 const CANCELLABLE_STATUSES = ['PENDING', 'PAID'];
 const MEAL_OPTIONS = ['葷食', '素食'];
+const COMPANION_RELATIONSHIPS = ['父母', '兄弟姊妹', '伴侶', '子女'] as const;
 
 /** Shown to both sides of a transfer while the early-bird batch is being reconciled by hand. */
 const TRANSFER_ADMIN_NOTICE =
@@ -59,6 +65,65 @@ function toGroupMember(draft: MemberDraft): GroupMember {
   };
 }
 
+interface RegistrantDraft {
+  name: string;
+  team: string;
+  lineId: string;
+  phone: string;
+  mealChoice: string;
+  mealCustom: string;
+}
+
+interface CompanionDraft {
+  name: string;
+  relationship: string;
+  mealChoice: string;
+  mealCustom: string;
+  note: string;
+}
+
+function toRegistrantDraft(order: OrderWithSession): RegistrantDraft {
+  const isKnownChoice = MEAL_OPTIONS.includes(order.mealPreference);
+  return {
+    name: order.registrantName,
+    team: order.registrantTeam,
+    lineId: order.registrantLineId,
+    phone: order.registrantPhone,
+    mealChoice: isKnownChoice ? order.mealPreference : '其他',
+    mealCustom: isKnownChoice ? '' : order.mealPreference,
+  };
+}
+
+function toCompanionDraft(companion?: Companion): CompanionDraft {
+  if (!companion) {
+    return {
+      name: '',
+      relationship: '',
+      mealChoice: '',
+      mealCustom: '',
+      note: '',
+    };
+  }
+  const isKnownChoice = MEAL_OPTIONS.includes(companion.mealPreference);
+  return {
+    name: companion.name,
+    relationship: companion.relationship,
+    mealChoice: isKnownChoice ? companion.mealPreference : '其他',
+    mealCustom: isKnownChoice ? '' : companion.mealPreference,
+    note: companion.note,
+  };
+}
+
+function toCompanion(draft: CompanionDraft): Companion {
+  return {
+    name: draft.name.trim(),
+    relationship: draft.relationship,
+    mealPreference:
+      draft.mealChoice === '其他' ? draft.mealCustom.trim() : draft.mealChoice,
+    note: draft.note.trim(),
+  };
+}
+
 function refundDeadline(order: OrderWithSession): Date {
   const deadline = new Date(order.ticketType.session.startTime);
   deadline.setDate(deadline.getDate() - REFUND_CUTOFF_DAYS);
@@ -69,6 +134,11 @@ function refundDeadline(order: OrderWithSession): Date {
 function batchClosed(order: OrderWithSession): boolean {
   const saleEndAt = order.ticketType.batch?.saleEndAt;
   return !!saleEndAt && Date.now() >= new Date(saleEndAt).getTime();
+}
+
+/** Registrant/companion info on a non-group order has no batch-close cutoff — only the event itself having already happened stops edits. */
+function eventAlreadyHappened(order: OrderWithSession): boolean {
+  return Date.now() > new Date(order.ticketType.session.startTime).getTime();
 }
 
 function canCancel(order: OrderWithSession): boolean {
@@ -83,23 +153,39 @@ export function MyTicketsPage() {
   const { token } = useAuth();
   const navigate = useNavigate();
   const [orders, setOrders] = useState<OrderWithSession[] | null>(null);
-  const [incomingTransfers, setIncomingTransfers] = useState<IncomingTransfer[]>([]);
+  const [incomingTransfers, setIncomingTransfers] = useState<
+    IncomingTransfer[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [memberDrafts, setMemberDrafts] = useState<Record<string, MemberDraft[]>>({});
-  const [childSeatDrafts, setChildSeatDrafts] = useState<Record<string, number>>({});
+  const [memberDrafts, setMemberDrafts] = useState<
+    Record<string, MemberDraft[]>
+  >({});
+  const [childSeatDrafts, setChildSeatDrafts] = useState<
+    Record<string, number>
+  >({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [transferringId, setTransferringId] = useState<string | null>(null);
   const [transferEmail, setTransferEmail] = useState('');
   const [transferBusyId, setTransferBusyId] = useState<string | null>(null);
-  const [respondingTransferId, setRespondingTransferId] = useState<string | null>(null);
+  const [respondingTransferId, setRespondingTransferId] = useState<
+    string | null
+  >(null);
   const [myName, setMyName] = useState('');
-  const [reviewingTransferId, setReviewingTransferId] = useState<string | null>(null);
+  const [reviewingTransferId, setReviewingTransferId] = useState<string | null>(
+    null,
+  );
   const [reviewFromName, setReviewFromName] = useState('');
   const [reviewToName, setReviewToName] = useState('');
   const [reviewMeal, setReviewMeal] = useState('');
   const [reviewBuyerType, setReviewBuyerType] = useState<BuyerType | ''>('');
+  const [registrantDrafts, setRegistrantDrafts] = useState<
+    Record<string, RegistrantDraft>
+  >({});
+  const [companionDrafts, setCompanionDrafts] = useState<
+    Record<string, CompanionDraft[]>
+  >({});
 
   function reloadOrders() {
     if (!token) return;
@@ -175,7 +261,10 @@ export function MyTicketsPage() {
         toMemberDraft(existing[i]),
       ),
     }));
-    setChildSeatDrafts((prev) => ({ ...prev, [order.id]: order.childSeatCount }));
+    setChildSeatDrafts((prev) => ({
+      ...prev,
+      [order.id]: order.childSeatCount,
+    }));
   }
 
   function updateMemberDraft(
@@ -202,6 +291,75 @@ export function MyTicketsPage() {
         draft.map(toGroupMember),
         childSeatDrafts[order.id] ?? 0,
       );
+      setOrders(
+        (prev) =>
+          prev?.map((o) => (o.id === order.id ? { ...o, ...updated } : o)) ??
+          null,
+      );
+      setEditingId(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '儲存失敗');
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  /** Non-group orders (plain individual or multi-quantity family/companion tickets) edit their own registrant + companion info here instead of a member list. */
+  function startEditingRegistrant(order: OrderWithSession) {
+    setEditingId(order.id);
+    setRegistrantDrafts((prev) => ({
+      ...prev,
+      [order.id]: toRegistrantDraft(order),
+    }));
+    setCompanionDrafts((prev) => ({
+      ...prev,
+      [order.id]: (order.companions ?? []).map(toCompanionDraft),
+    }));
+  }
+
+  function updateRegistrantDraft(
+    orderId: string,
+    patch: Partial<RegistrantDraft>,
+  ) {
+    setRegistrantDrafts((prev) => ({
+      ...prev,
+      [orderId]: { ...prev[orderId], ...patch },
+    }));
+  }
+
+  function updateCompanionDraft(
+    orderId: string,
+    index: number,
+    patch: Partial<CompanionDraft>,
+  ) {
+    setCompanionDrafts((prev) => {
+      const next = [...(prev[orderId] ?? [])];
+      next[index] = { ...next[index], ...patch };
+      return { ...prev, [orderId]: next };
+    });
+  }
+
+  async function handleSaveRegistrantInfo(order: OrderWithSession) {
+    if (!token) return;
+    const draft = registrantDrafts[order.id];
+    if (!draft) return;
+    setSavingId(order.id);
+    setError(null);
+    try {
+      const companions = order.companions
+        ? (companionDrafts[order.id] ?? []).map(toCompanion)
+        : undefined;
+      const updated = await api.updateRegistrantInfo(token, order.id, {
+        registrantName: draft.name.trim(),
+        registrantTeam: draft.team.trim(),
+        registrantLineId: draft.lineId.trim(),
+        registrantPhone: draft.phone.trim(),
+        mealPreference:
+          draft.mealChoice === '其他'
+            ? draft.mealCustom.trim()
+            : draft.mealChoice,
+        companions,
+      });
       setOrders(
         (prev) =>
           prev?.map((o) => (o.id === order.id ? { ...o, ...updated } : o)) ??
@@ -433,11 +591,13 @@ export function MyTicketsPage() {
                         }
                       >
                         <option value={0}>無需求</option>
-                        {Array.from({ length: 15 }, (_, i) => i + 1).map((n) => (
-                          <option key={n} value={n}>
-                            {n}
-                          </option>
-                        ))}
+                        {Array.from({ length: 15 }, (_, i) => i + 1).map(
+                          (n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ),
+                        )}
                       </select>
                     </label>
                     <div className="button-row">
@@ -472,6 +632,188 @@ export function MyTicketsPage() {
                 )}
               </div>
             )}
+            {!order.ticketType.fixedQuantity && (
+              <div className="group-members-editor">
+                {editingId === order.id ? (
+                  <>
+                    <h3>編輯報名資料</h3>
+                    <label>
+                      姓名
+                      <input
+                        value={registrantDrafts[order.id]?.name ?? ''}
+                        onChange={(e) =>
+                          updateRegistrantDraft(order.id, {
+                            name: e.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      所屬系隊
+                      <input
+                        value={registrantDrafts[order.id]?.team ?? ''}
+                        onChange={(e) =>
+                          updateRegistrantDraft(order.id, {
+                            team: e.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      LINE ID
+                      <input
+                        value={registrantDrafts[order.id]?.lineId ?? ''}
+                        onChange={(e) =>
+                          updateRegistrantDraft(order.id, {
+                            lineId: e.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      聯絡電話
+                      <input
+                        value={registrantDrafts[order.id]?.phone ?? ''}
+                        onChange={(e) =>
+                          updateRegistrantDraft(order.id, {
+                            phone: e.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      用餐需求
+                      <select
+                        value={registrantDrafts[order.id]?.mealChoice ?? ''}
+                        onChange={(e) =>
+                          updateRegistrantDraft(order.id, {
+                            mealChoice: e.target.value,
+                          })
+                        }
+                      >
+                        <option value="">請選擇</option>
+                        <option value="葷食">葷食</option>
+                        <option value="素食">素食</option>
+                        <option value="其他">其他</option>
+                      </select>
+                    </label>
+                    {registrantDrafts[order.id]?.mealChoice === '其他' && (
+                      <label>
+                        請說明用餐需求
+                        <input
+                          value={registrantDrafts[order.id]?.mealCustom ?? ''}
+                          onChange={(e) =>
+                            updateRegistrantDraft(order.id, {
+                              mealCustom: e.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                    )}
+                    {(companionDrafts[order.id] ?? []).map(
+                      (companion, index) => (
+                        <div key={index} className="group-member-block">
+                          <h4>
+                            {order.buyingForFamily
+                              ? `第 ${index + 1} 張`
+                              : `第 ${index + 2} 張（同行親友）`}
+                          </h4>
+                          <label>
+                            姓名
+                            <input
+                              value={companion.name}
+                              onChange={(e) =>
+                                updateCompanionDraft(order.id, index, {
+                                  name: e.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            與您的關係
+                            <select
+                              value={companion.relationship}
+                              onChange={(e) =>
+                                updateCompanionDraft(order.id, index, {
+                                  relationship: e.target.value,
+                                })
+                              }
+                            >
+                              <option value="">請選擇</option>
+                              {COMPANION_RELATIONSHIPS.map((rel) => (
+                                <option key={rel} value={rel}>
+                                  {rel}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            用餐需求
+                            <select
+                              value={companion.mealChoice}
+                              onChange={(e) =>
+                                updateCompanionDraft(order.id, index, {
+                                  mealChoice: e.target.value,
+                                })
+                              }
+                            >
+                              <option value="">請選擇</option>
+                              <option value="葷食">葷食</option>
+                              <option value="素食">素食</option>
+                              <option value="其他">其他</option>
+                            </select>
+                          </label>
+                          {companion.mealChoice === '其他' && (
+                            <label>
+                              請說明用餐需求
+                              <input
+                                value={companion.mealCustom}
+                                onChange={(e) =>
+                                  updateCompanionDraft(order.id, index, {
+                                    mealCustom: e.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                          )}
+                          <label>
+                            備註
+                            <input
+                              value={companion.note}
+                              onChange={(e) =>
+                                updateCompanionDraft(order.id, index, {
+                                  note: e.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                        </div>
+                      ),
+                    )}
+                    <div className="button-row">
+                      <button
+                        disabled={savingId === order.id}
+                        onClick={() => handleSaveRegistrantInfo(order)}
+                      >
+                        {savingId === order.id ? '儲存中…' : '儲存資料'}
+                      </button>
+                      <button
+                        className="link-button"
+                        onClick={() => setEditingId(null)}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </>
+                ) : eventAlreadyHappened(order) ? (
+                  <p className="hint">活動已結束，無法再編輯報名資料</p>
+                ) : (
+                  <button onClick={() => startEditingRegistrant(order)}>
+                    編輯票券資訊
+                  </button>
+                )}
+              </div>
+            )}
             {canCancel(order) ? (
               <>
                 <button
@@ -499,9 +841,12 @@ export function MyTicketsPage() {
                 {order.transfers.length > 0 ? (
                   <>
                     <p className="hint">
-                      轉讓邀請已送出給 {order.transfers[0].toUser.email}，等待對方確認
+                      轉讓邀請已送出給 {order.transfers[0].toUser.email}
+                      ，等待對方確認
                     </p>
-                    <p className="transfer-admin-notice">{TRANSFER_ADMIN_NOTICE}</p>
+                    <p className="transfer-admin-notice">
+                      {TRANSFER_ADMIN_NOTICE}
+                    </p>
                     <button
                       className="link-button"
                       disabled={transferBusyId === order.id}
@@ -546,77 +891,79 @@ export function MyTicketsPage() {
           </div>
         ))}
       </div>
-      {reviewingTransferId && (() => {
-        const transfer = incomingTransfers.find(
-          (t) => t.id === reviewingTransferId,
-        );
-        if (!transfer) return null;
-        return (
-          <div className="modal-overlay" onClick={cancelReviewAccept}>
-            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-              <h2>📝轉讓表格📝</h2>
-              <p className="hint">
-                {transfer.fromUser.email} 想將「{transfer.order.ticketType.name}
-                」轉讓給您
-              </p>
-              <p className="transfer-admin-notice">{TRANSFER_ADMIN_NOTICE}</p>
-              <label>
-                轉讓者姓名
-                <input
-                  value={reviewFromName}
-                  onChange={(e) => setReviewFromName(e.target.value)}
-                />
-              </label>
-              <label>
-                受讓者姓名
-                <input
-                  value={reviewToName}
-                  onChange={(e) => setReviewToName(e.target.value)}
-                />
-              </label>
-              <label>
-                葷／素
-                <input
-                  value={reviewMeal}
-                  onChange={(e) => setReviewMeal(e.target.value)}
-                />
-              </label>
-              <label>
-                夥伴／親友
-                <select
-                  value={reviewBuyerType}
-                  onChange={(e) =>
-                    setReviewBuyerType(e.target.value as BuyerType | '')
-                  }
-                >
-                  <option value="">請選擇</option>
-                  {BUYER_TYPE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {error && <p className="error">{error}</p>}
-              <div className="button-row">
-                <button
-                  disabled={respondingTransferId === transfer.id}
-                  onClick={() => handleConfirmAccept(transfer.id)}
-                >
-                  {respondingTransferId === transfer.id ? '處理中…' : '確認'}
-                </button>
-                <button
-                  className="link-button"
-                  disabled={respondingTransferId === transfer.id}
-                  onClick={() => handleRejectIncoming(transfer.id)}
-                >
-                  拒絕
-                </button>
+      {reviewingTransferId &&
+        (() => {
+          const transfer = incomingTransfers.find(
+            (t) => t.id === reviewingTransferId,
+          );
+          if (!transfer) return null;
+          return (
+            <div className="modal-overlay" onClick={cancelReviewAccept}>
+              <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                <h2>📝轉讓表格📝</h2>
+                <p className="hint">
+                  {transfer.fromUser.email} 想將「
+                  {transfer.order.ticketType.name}
+                  」轉讓給您
+                </p>
+                <p className="transfer-admin-notice">{TRANSFER_ADMIN_NOTICE}</p>
+                <label>
+                  轉讓者姓名
+                  <input
+                    value={reviewFromName}
+                    onChange={(e) => setReviewFromName(e.target.value)}
+                  />
+                </label>
+                <label>
+                  受讓者姓名
+                  <input
+                    value={reviewToName}
+                    onChange={(e) => setReviewToName(e.target.value)}
+                  />
+                </label>
+                <label>
+                  葷／素
+                  <input
+                    value={reviewMeal}
+                    onChange={(e) => setReviewMeal(e.target.value)}
+                  />
+                </label>
+                <label>
+                  夥伴／親友
+                  <select
+                    value={reviewBuyerType}
+                    onChange={(e) =>
+                      setReviewBuyerType(e.target.value as BuyerType | '')
+                    }
+                  >
+                    <option value="">請選擇</option>
+                    {BUYER_TYPE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {error && <p className="error">{error}</p>}
+                <div className="button-row">
+                  <button
+                    disabled={respondingTransferId === transfer.id}
+                    onClick={() => handleConfirmAccept(transfer.id)}
+                  >
+                    {respondingTransferId === transfer.id ? '處理中…' : '確認'}
+                  </button>
+                  <button
+                    className="link-button"
+                    disabled={respondingTransferId === transfer.id}
+                    onClick={() => handleRejectIncoming(transfer.id)}
+                  >
+                    拒絕
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
     </div>
   );
 }
