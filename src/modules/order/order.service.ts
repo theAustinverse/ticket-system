@@ -19,6 +19,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { REFUND_CUTOFF_DAYS } from './order.constants';
 import type { GroupMember } from './types/group-member';
 import type { Companion } from './types/companion';
+import { recordOrderHistory } from './order-history';
 
 /** The leader occupies one of the fixedQuantity seats themselves. */
 function otherMembersCount(fixedQuantity: number): number {
@@ -52,6 +53,15 @@ export class OrderService {
     private readonly emailService: EmailService,
     private readonly queueRoomService: QueueRoomService,
   ) {}
+
+  /** Email (falling back to the raw id) for OrderHistory's denormalized actorLabel. */
+  private async actorLabelFor(userId: string): Promise<string> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+    return user?.email ?? userId;
+  }
 
   /**
    * This system only handles the ticket-grabbing/reservation itself — there
@@ -247,6 +257,23 @@ export class OrderService {
         throw error;
       }
 
+      await recordOrderHistory(this.prisma, {
+        orderId: order.id,
+        action: 'CREATED',
+        actorUserId: userId,
+        actorLabel: user.email,
+        after: {
+          registrantName: order.registrantName,
+          registrantTeam: order.registrantTeam,
+          registrantLineId: order.registrantLineId,
+          registrantPhone: order.registrantPhone,
+          mealPreference: order.mealPreference,
+          quantity: order.quantity,
+          groupMembers: order.groupMembers,
+          companions: order.companions,
+        },
+      });
+
       const isLoadTest =
         process.env.LOAD_TEST_MODE === 'true' &&
         /^loadtest\d+@gmail\.com$/i.test(user.email);
@@ -352,13 +379,30 @@ export class OrderService {
       );
     }
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         groupMembers: groupMembers as unknown as object[],
         ...(childSeatCount !== undefined && { childSeatCount }),
       },
     });
+
+    await recordOrderHistory(this.prisma, {
+      orderId,
+      action: 'GROUP_MEMBERS_UPDATED',
+      actorUserId: userId,
+      actorLabel: await this.actorLabelFor(userId),
+      before: {
+        groupMembers: order.groupMembers,
+        childSeatCount: order.childSeatCount,
+      },
+      after: {
+        groupMembers: updated.groupMembers,
+        childSeatCount: updated.childSeatCount,
+      },
+    });
+
+    return updated;
   }
 
   /**
@@ -429,7 +473,7 @@ export class OrderService {
       }
     }
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         registrantName: dto.registrantName,
@@ -445,6 +489,33 @@ export class OrderService {
         }),
       },
     });
+
+    await recordOrderHistory(this.prisma, {
+      orderId,
+      action: 'REGISTRANT_INFO_UPDATED',
+      actorUserId: userId,
+      actorLabel: await this.actorLabelFor(userId),
+      before: {
+        registrantName: order.registrantName,
+        registrantTeam: order.registrantTeam,
+        registrantLineId: order.registrantLineId,
+        registrantPhone: order.registrantPhone,
+        mealPreference: order.mealPreference,
+        companions: order.companions,
+        childSeatCount: order.childSeatCount,
+      },
+      after: {
+        registrantName: updated.registrantName,
+        registrantTeam: updated.registrantTeam,
+        registrantLineId: updated.registrantLineId,
+        registrantPhone: updated.registrantPhone,
+        mealPreference: updated.mealPreference,
+        companions: updated.companions,
+        childSeatCount: updated.childSeatCount,
+      },
+    });
+
+    return updated;
   }
 
   listMyOrders(userId: string) {
@@ -510,6 +581,14 @@ export class OrderService {
       data: { orderId, fromUserId: userId, toUserId: toUser.id },
     });
 
+    await recordOrderHistory(this.prisma, {
+      orderId,
+      action: 'TRANSFER_CREATED',
+      actorUserId: userId,
+      actorLabel: fromUser!.email,
+      after: { transferId: transfer.id, toEmail: toUser.email },
+    });
+
     await this.emailService.sendTransferInvite(toUser.email, {
       ticketTypeName: order.ticketType.name,
       fromEmail: fromUser!.email,
@@ -568,6 +647,7 @@ export class OrderService {
       throw new BadRequestException('This order is no longer active');
     }
 
+    const previousOwnerId = transfer.order.userId;
     const [, updatedOrder] = await this.prisma.$transaction([
       this.prisma.ticketTransfer.update({
         where: { id: transferId },
@@ -578,6 +658,15 @@ export class OrderService {
         data: { userId },
       }),
     ]);
+
+    await recordOrderHistory(this.prisma, {
+      orderId: transfer.orderId,
+      action: 'TRANSFER_ACCEPTED',
+      actorUserId: userId,
+      actorLabel: await this.actorLabelFor(userId),
+      before: { userId: previousOwnerId },
+      after: { userId, notice },
+    });
 
     // Best-effort: the early-bird batch has already closed and been
     // manually reconciled into a spreadsheet, so the admin team needs to
@@ -618,10 +707,21 @@ export class OrderService {
     if (transfer.status !== 'PENDING') {
       throw new BadRequestException('This transfer is no longer pending');
     }
-    return this.prisma.ticketTransfer.update({
+    const updated = await this.prisma.ticketTransfer.update({
       where: { id: transferId },
       data: { status: nextStatus, respondedAt: new Date() },
     });
+
+    await recordOrderHistory(this.prisma, {
+      orderId: transfer.orderId,
+      action: nextStatus === 'REJECTED' ? 'TRANSFER_REJECTED' : 'TRANSFER_CANCELLED',
+      actorUserId: userId,
+      actorLabel: await this.actorLabelFor(userId),
+      before: { status: 'PENDING' },
+      after: { status: nextStatus },
+    });
+
+    return updated;
   }
 
   /**
@@ -703,6 +803,15 @@ export class OrderService {
         .catch(() => {});
       throw error;
     }
+
+    await recordOrderHistory(this.prisma, {
+      orderId,
+      action: 'CANCELLED',
+      actorUserId: userId,
+      actorLabel: await this.actorLabelFor(userId),
+      before: { status: 'PAID' },
+      after: { status: 'CANCELLED' },
+    });
 
     return this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
   }

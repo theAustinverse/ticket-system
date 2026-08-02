@@ -180,9 +180,35 @@ model Order {
   /// Internal note the admin writes in the back office; never shown to users.
   adminNote         String?
   transfers         TicketTransfer[]
+  history           OrderHistory[]
 
   @@index([userId])
   @@index([ticketTypeId])
+}
+
+/// Append-only audit trail of everything that happened to an order —
+/// self-service edits (registrant info, group members), transfers, and
+/// cancellations — so a corrected/overwritten value isn't lost, and admin
+/// can see who changed what and when. Cascades with the order on hard
+/// delete, same as the order's other child rows.
+model OrderHistory {
+  id          String   @id @default(cuid())
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId     String
+  action      String
+  /// Set when the actor is a registered account (the order owner, or the
+  /// other side of a transfer); null for admin-initiated actions, since the
+  /// back office login isn't backed by a User row.
+  actorUserId String?
+  /// Denormalized display label (typically an email) captured at write
+  /// time, so this stays meaningful even if the actor's account is later
+  /// renamed or deleted.
+  actorLabel  String
+  before      Json?
+  after       Json?
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
 }
 
 enum OrderStatus {

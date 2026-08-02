@@ -59,6 +59,9 @@ describe('OrderService', () => {
           .fn()
           .mockResolvedValue({ id: 'user-1', email: 'user@gmail.com' }),
       },
+      orderHistory: {
+        create: jest.fn().mockResolvedValue(undefined),
+      },
     };
     inventory = {
       decrementStock: jest.fn(),
@@ -118,6 +121,34 @@ describe('OrderService', () => {
         data: expect.objectContaining({ totalAmount: 22000, quantity: 11 }),
       }),
     );
+  });
+
+  it('records a CREATED history entry on successful order creation', async () => {
+    inventory.decrementStock.mockResolvedValue(0);
+    const createdOrder = {
+      id: 'order-1',
+      registrantName: 'Leader',
+      registrantTeam: 'Team',
+      registrantLineId: 'leader-line',
+      registrantPhone: '0900000000',
+      mealPreference: '葷食',
+      quantity: 11,
+      groupMembers: makeMembers(10),
+      companions: null,
+    };
+    prisma.order.create.mockResolvedValue(createdOrder);
+
+    await service.createOrder('user-1', validGroupOrderDto);
+
+    expect(prisma.orderHistory.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        orderId: 'order-1',
+        action: 'CREATED',
+        actorUserId: 'user-1',
+        actorLabel: 'user@gmail.com',
+        after: expect.objectContaining({ registrantName: 'Leader' }),
+      }),
+    });
   });
 
   it('rolls back the Redis reservation if persisting the order fails', async () => {
@@ -241,6 +272,19 @@ describe('OrderService', () => {
       });
     });
 
+    it('records a GROUP_MEMBERS_UPDATED history entry with before/after snapshots', async () => {
+      const members = makeMembers(10);
+      await service.updateGroupMembers('user-1', 'order-1', members);
+      expect(prisma.orderHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId: 'order-1',
+          action: 'GROUP_MEMBERS_UPDATED',
+          actorUserId: 'user-1',
+          after: expect.objectContaining({ groupMembers: members }),
+        }),
+      });
+    });
+
     it('rejects when the order belongs to someone else', async () => {
       await expect(
         service.updateGroupMembers('someone-else', 'order-1', []),
@@ -351,6 +395,20 @@ describe('OrderService', () => {
         service.updateRegistrantInfo('someone-else', 'order-1', validDto),
       ).rejects.toThrow(ForbiddenException);
       expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('records a REGISTRANT_INFO_UPDATED history entry with before/after snapshots', async () => {
+      await service.updateRegistrantInfo('user-1', 'order-1', validDto);
+      expect(prisma.orderHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId: 'order-1',
+          action: 'REGISTRANT_INFO_UPDATED',
+          actorUserId: 'user-1',
+          actorLabel: 'user@gmail.com',
+          before: expect.objectContaining({ registrantName: undefined }),
+          after: expect.objectContaining({ registrantName: '王小明' }),
+        }),
+      });
     });
 
     it('rejects editing a group ticket order (use updateGroupMembers instead)', async () => {
@@ -488,6 +546,24 @@ describe('OrderService', () => {
       );
     });
 
+    it('records a CANCELLED history entry', async () => {
+      const order = makeCancellableOrder(groupTicketType);
+      prisma.order.findUnique = jest.fn().mockResolvedValue(order);
+      prisma.order.findUniqueOrThrow = jest
+        .fn()
+        .mockResolvedValue({ ...order, status: 'CANCELLED' });
+      await service.cancelOrder('user-1', 'order-1');
+      expect(prisma.orderHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId: 'order-1',
+          action: 'CANCELLED',
+          actorUserId: 'user-1',
+          before: expect.objectContaining({ status: 'PAID' }),
+          after: expect.objectContaining({ status: 'CANCELLED' }),
+        }),
+      });
+    });
+
     it('releases via the shared pool + group counter for a pooled group ticket type', async () => {
       const pooledTicketType = {
         ...groupTicketType,
@@ -591,6 +667,15 @@ describe('OrderService', () => {
         toName: '陳小華',
         mealPreference: '葷食',
         buyingForFamily: false,
+      });
+      expect(prisma.orderHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId: 'order-1',
+          action: 'TRANSFER_ACCEPTED',
+          actorUserId: 'user-2',
+          before: expect.objectContaining({ userId: undefined }),
+          after: expect.objectContaining({ userId: 'user-2' }),
+        }),
       });
     });
 

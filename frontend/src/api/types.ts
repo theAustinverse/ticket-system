@@ -210,6 +210,17 @@ export interface AdminOrderRow {
   companions: Companion[] | null;
 }
 
+export interface OrderHistoryEntry {
+  id: string;
+  orderId: string;
+  action: string;
+  actorUserId: string | null;
+  actorLabel: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: string;
+}
+
 export interface AdminTeamStat {
   team: string;
   ticketCount: number;

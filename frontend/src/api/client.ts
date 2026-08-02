@@ -9,6 +9,7 @@ import type {
   GroupMember,
   IncomingTransfer,
   Order,
+  OrderHistoryEntry,
   OrderWithSession,
   QueueStatus,
   RegistrationInfo,
@@ -237,6 +238,11 @@ export const api = {
         body: JSON.stringify({ note }),
       },
     ),
+
+  adminGetOrderHistory: (authToken: string, id: string) =>
+    request<OrderHistoryEntry[]>(`/admin/orders/${id}/history`, {
+      headers: authHeader(authToken),
+    }),
 
   adminDeleteOrder: (authToken: string, id: string) =>
     request<{ deleted: boolean }>(`/admin/orders/${id}`, {

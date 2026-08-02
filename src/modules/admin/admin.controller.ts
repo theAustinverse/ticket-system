@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -51,8 +52,17 @@ export class AdminController {
   }
 
   @Patch('orders/:id/note')
-  updateOrderNote(@Param('id') id: string, @Body() dto: UpdateOrderNoteDto) {
-    return this.adminService.updateOrderNote(id, dto.note);
+  updateOrderNote(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderNoteDto,
+  ) {
+    return this.adminService.updateOrderNote(id, dto.note, req.user.email);
+  }
+
+  @Get('orders/:id/history')
+  getOrderHistory(@Param('id') id: string) {
+    return this.adminService.getOrderHistory(id);
   }
 
   @Delete('orders/:id')

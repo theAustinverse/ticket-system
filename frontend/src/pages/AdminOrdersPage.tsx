@@ -3,7 +3,25 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { decodeJwtRole } from '../jwt';
-import type { AdminOrderRow, AdminTeamStat, Companion, GroupMember } from '../api/types';
+import type {
+  AdminOrderRow,
+  AdminTeamStat,
+  Companion,
+  GroupMember,
+  OrderHistoryEntry,
+} from '../api/types';
+
+const HISTORY_ACTION_LABELS: Record<string, string> = {
+  CREATED: '建立訂單',
+  REGISTRANT_INFO_UPDATED: '編輯報名資訊',
+  GROUP_MEMBERS_UPDATED: '編輯團員名單',
+  CANCELLED: '取消訂單',
+  TRANSFER_CREATED: '發起轉讓',
+  TRANSFER_ACCEPTED: '接受轉讓',
+  TRANSFER_REJECTED: '拒絕轉讓',
+  TRANSFER_CANCELLED: '取消轉讓',
+  ADMIN_NOTE_UPDATED: '後台備註',
+};
 
 /** Tolerates orders placed before this feature, which stored a plain member-name string. */
 function memberName(member: GroupMember | string): string {
@@ -67,6 +85,9 @@ export function AdminOrdersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [historyOpen, setHistoryOpen] = useState<Set<string>>(new Set());
+  const [historyData, setHistoryData] = useState<Record<string, OrderHistoryEntry[]>>({});
+  const [historyLoading, setHistoryLoading] = useState<Set<string>>(new Set());
 
   function toggleExpanded(id: string) {
     setExpanded((prev) => {
@@ -75,6 +96,29 @@ export function AdminOrdersPage() {
       else next.add(id);
       return next;
     });
+  }
+
+  async function toggleHistory(id: string) {
+    setHistoryOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    if (!token || historyData[id]) return;
+    setHistoryLoading((prev) => new Set(prev).add(id));
+    try {
+      const entries = await api.adminGetOrderHistory(token, id);
+      setHistoryData((prev) => ({ ...prev, [id]: entries }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '載入歷程失敗');
+    } finally {
+      setHistoryLoading((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   }
 
   useEffect(() => {
@@ -320,12 +364,15 @@ export function AdminOrdersPage() {
               <th>訂購時間</th>
               <th>訂票編號</th>
               <th>備註</th>
+              <th>歷程</th>
             </tr>
           </thead>
           {visibleRows.map((row) => {
               const groupStatus = groupFillStatus(row);
               const companionStatus = companionFillStatus(row);
               const isOpen = expanded.has(row.id);
+              const isHistoryOpen = historyOpen.has(row.id);
+              const isHistoryLoading = historyLoading.has(row.id);
               return (
               <tbody key={row.id}>
               <tr>
@@ -385,11 +432,65 @@ export function AdminOrdersPage() {
                     onBlur={() => handleNoteBlur(row)}
                   />
                 </td>
+                <td>
+                  <button
+                    type="button"
+                    className="admin-expand-toggle"
+                    onClick={() => toggleHistory(row.id)}
+                  >
+                    歷程 {isHistoryOpen ? ' ▲' : ' ▼'}
+                  </button>
+                </td>
               </tr>
+              {isHistoryOpen && (
+                <tr className="admin-group-detail-row">
+                  <td />
+                  <td colSpan={12}>
+                    <div className="admin-group-detail">
+                      {isHistoryLoading && <p className="hint">載入中…</p>}
+                      {!isHistoryLoading && (historyData[row.id]?.length ?? 0) === 0 && (
+                        <p className="hint">尚無變更紀錄</p>
+                      )}
+                      {!isHistoryLoading && (historyData[row.id]?.length ?? 0) > 0 && (
+                        <table className="admin-subtable">
+                          <thead>
+                            <tr>
+                              <th>時間</th>
+                              <th>動作</th>
+                              <th>操作者</th>
+                              <th>變更前</th>
+                              <th>變更後</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {historyData[row.id]!.map((entry) => (
+                              <tr key={entry.id}>
+                                <td>{new Date(entry.createdAt).toLocaleString()}</td>
+                                <td>{HISTORY_ACTION_LABELS[entry.action] ?? entry.action}</td>
+                                <td>{entry.actorLabel}</td>
+                                <td>
+                                  <pre className="admin-history-json">
+                                    {entry.before ? JSON.stringify(entry.before, null, 2) : '—'}
+                                  </pre>
+                                </td>
+                                <td>
+                                  <pre className="admin-history-json">
+                                    {entry.after ? JSON.stringify(entry.after, null, 2) : '—'}
+                                  </pre>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
               {isOpen && (groupStatus || companionStatus) && (
                 <tr className="admin-group-detail-row">
                   <td />
-                  <td colSpan={11}>
+                  <td colSpan={12}>
                     <div className="admin-group-detail">
                       {row.groupLeaderName && (
                         <p className="hint">

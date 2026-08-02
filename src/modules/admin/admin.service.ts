@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { ChatGateway } from '../chat/chat.gateway';
+import { recordOrderHistory } from '../order/order-history';
 import type { GroupMember } from '../order/types/group-member';
 import type { Companion } from '../order/types/companion';
 
@@ -116,12 +117,30 @@ export class AdminService {
       .map((row, i) => ({ ...row, rank: i + 1 }));
   }
 
-  async updateOrderNote(id: string, note: string) {
+  async updateOrderNote(id: string, note: string, adminLabel: string) {
     const order = await this.prisma.order.findUnique({ where: { id } });
     if (!order) throw new NotFoundException(`Order ${id} not found`);
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id },
       data: { adminNote: note },
+    });
+
+    await recordOrderHistory(this.prisma, {
+      orderId: id,
+      action: 'ADMIN_NOTE_UPDATED',
+      actorLabel: adminLabel,
+      before: { adminNote: order.adminNote },
+      after: { adminNote: note },
+    });
+
+    return updated;
+  }
+
+  /** Full audit trail for one order, newest first — feeds the admin order-detail history view. */
+  getOrderHistory(orderId: string) {
+    return this.prisma.orderHistory.findMany({
+      where: { orderId },
+      orderBy: { createdAt: 'desc' },
     });
   }
 

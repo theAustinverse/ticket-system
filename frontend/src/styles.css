@@ -1149,6 +1149,15 @@ button:disabled {
   margin-top: 0.75rem;
 }
 
+.admin-history-json {
+  max-width: 260px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.75rem;
+  color: var(--paper-dim);
+  margin: 0;
+}
+
 .admin-fill-complete {
   color: #7de08d;
 }
