@@ -12,6 +12,19 @@ Backend → Railway (Docker, auto-deploy from `main`, runs `prisma migrate deplo
 
 ## Commands
 
+**Fresh clone / cloud sandbox — do this first.** The generated Prisma client
+(`src/generated/prisma`) is gitignored, so a clean checkout has no client and
+*every* typecheck, test, and build fails until it's generated:
+
+```bash
+npm ci && npx prisma generate     # repo root; needs no .env and no live DB
+cd frontend && npm ci
+```
+
+This is deliberately **not** a `postinstall` hook: the Dockerfile runs `npm ci`
+(line 4) before copying `prisma/` (line 5), so a postinstall would break the
+Railway image build. The Dockerfile calls `prisma generate` explicitly instead.
+
 Backend (repo root):
 ```bash
 npm run start:dev                          # watch mode
@@ -31,6 +44,8 @@ k6 run -e BASE_URL=http://localhost:3000 -e TICKET_TYPE_ID=<id> -e TOTAL_STOCK=2
 ```
 
 **Local infra**: `docker-compose up -d` also builds/runs the `api` container — for backend iteration, run `npm run start:dev` on the host against compose's Postgres/Redis instead of rebuilding it each time. Copy `.env.example` to `.env` first; that file documents every env var and what it gates.
+
+**Without Postgres/Redis** (e.g. a cloud sandbox): unit tests, both typechecks, and both builds all run fine — the unit suite is fully mocked and loads no `.env`. What genuinely cannot run there: `jest.integration.config.js`, `test/jest-e2e.json` (loads `dotenv/config`), the k6 load tests, and anything via docker-compose.
 
 **Prisma**: generated client lives at `src/generated/prisma`, not `node_modules`. When no local DB is available to run `prisma migrate dev`, hand-write the migration SQL under `prisma/migrations/<timestamp>_<name>/migration.sql` — match the style of recent migrations exactly.
 
