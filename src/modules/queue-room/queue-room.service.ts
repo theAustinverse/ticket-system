@@ -9,8 +9,15 @@ import { PrismaService } from '../../prisma/prisma.service';
  * Not secret-grade — just a speed bump so someone who only holds
  * individual-ticket eligibility doesn't wander into the group-ticket queue
  * by mistake. Every order still records who bought what for admin review.
+ *
+ * Deliberately has no fallback. A default sitting in the source tree is a
+ * passcode published to anyone who can read the repo, which defeats even the
+ * modest purpose this serves. Unset is treated as misconfiguration and fails
+ * closed at the point of use (see enter()) rather than throwing at boot —
+ * only passcode-gated ticket types are affected, so the rest of the sale
+ * keeps working while an admin fixes the variable.
  */
-const GROUP_TICKET_PASSCODE = process.env.GROUP_TICKET_PASSCODE ?? '142857';
+const GROUP_TICKET_PASSCODE = process.env.GROUP_TICKET_PASSCODE;
 
 /**
  * Target sustained admission throughput, independent of how often the tick
@@ -89,8 +96,21 @@ export class QueueRoomService {
       where: { id: ticketTypeId },
       select: { requiresPasscode: true },
     });
-    if (ticketType?.requiresPasscode && passcode !== GROUP_TICKET_PASSCODE) {
-      throw new ForbiddenException('Incorrect passcode');
+    if (ticketType?.requiresPasscode) {
+      // Fail closed: with no passcode configured there is nothing to check
+      // against, and treating that as "no gate" would silently open the
+      // group-ticket queue to everyone.
+      if (!GROUP_TICKET_PASSCODE) {
+        this.logger.error(
+          `Ticket type ${ticketTypeId} requires a passcode but GROUP_TICKET_PASSCODE is not set — refusing entry. Set the variable on the server.`,
+        );
+        throw new ForbiddenException(
+          '系統尚未設定通關密碼，請聯繫主辦單位',
+        );
+      }
+      if (passcode !== GROUP_TICKET_PASSCODE) {
+        throw new ForbiddenException('Incorrect passcode');
+      }
     }
 
     const token = randomUUID();

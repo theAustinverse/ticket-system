@@ -12,9 +12,13 @@ const FROM_ADDRESS =
  * transfer after that point needs a human to fold it into that
  * reconciliation, so the admin team asked to be emailed on every transfer
  * rather than having to keep re-checking the app for new ones.
+ *
+ * Deliberately has no fallback: it is a real person's private address, and a
+ * default here would sit in the source tree where anyone reading the repo
+ * could see it. Unset means the notice is skipped with a warning, the same
+ * way a missing RESEND_API_KEY behaves — never a hardcoded recipient.
  */
-const TRANSFER_ADMIN_EMAIL =
-  process.env.TRANSFER_ADMIN_EMAIL ?? 'lucy98112226424@gmail.com';
+const TRANSFER_ADMIN_EMAIL = process.env.TRANSFER_ADMIN_EMAIL;
 
 /**
  * Every field below (name, LINE ID, meal preference, etc.) is user-supplied
@@ -243,6 +247,13 @@ export class EmailService {
     if (!this.resend) {
       this.logger.warn(
         'RESEND_API_KEY not set — skipping transfer admin notice email',
+      );
+      return;
+    }
+    if (!TRANSFER_ADMIN_EMAIL) {
+      this.logger.warn(
+        'TRANSFER_ADMIN_EMAIL not set — skipping transfer admin notice email. ' +
+          'The transfer itself still completed; only the admin notification was skipped.',
       );
       return;
     }
