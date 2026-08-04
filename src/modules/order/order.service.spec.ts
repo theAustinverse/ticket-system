@@ -710,6 +710,101 @@ describe('OrderService', () => {
       });
       expect(result).toEqual({ id: 'order-1', userId: 'user-2' });
     });
+
+    /**
+     * The one-bundle-per-session cap lives in a Redis claim keyed by
+     * (session, owner) with no TTL, so a transfer that doesn't move it lets
+     * the recipient accept bundle after bundle while the sender stays locked
+     * out of buying another one forever.
+     */
+    describe('group-bundle purchase claim handoff', () => {
+      const notice = {
+        fromName: '王小明',
+        toName: '陳小華',
+        mealPreference: '葷食',
+        buyingForFamily: false,
+      };
+
+      function mockPendingTransfer(fixedQuantity: number | null) {
+        prisma.ticketTransfer = {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'transfer-1',
+            orderId: 'order-1',
+            toUserId: 'user-2',
+            status: 'PENDING',
+            order: {
+              status: 'PAID',
+              userId: 'user-1',
+              ticketType: {
+                id: 'tt-group',
+                sessionId: 'session-1',
+                fixedQuantity,
+                batch: {},
+              },
+            },
+          }),
+          update: jest.fn(),
+        };
+        prisma.$transaction = jest
+          .fn()
+          .mockResolvedValue([null, { id: 'order-1', userId: 'user-2' }]);
+      }
+
+      it("stakes the recipient's claim and frees the previous owner's", async () => {
+        mockPendingTransfer(11);
+
+        await service.acceptTransfer('user-2', 'transfer-1', notice);
+
+        expect(inventory.claimGroupPurchase).toHaveBeenCalledWith(
+          'session-1',
+          'user-2',
+        );
+        expect(inventory.releaseGroupPurchaseClaim).toHaveBeenCalledWith(
+          'session-1',
+          'user-1',
+        );
+      });
+
+      it('refuses a recipient who already holds a bundle for that session, leaving ownership untouched', async () => {
+        mockPendingTransfer(11);
+        inventory.claimGroupPurchase.mockResolvedValue(false);
+
+        await expect(
+          service.acceptTransfer('user-2', 'transfer-1', notice),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        // The sender still owns the bundle, so their claim must stand.
+        expect(inventory.releaseGroupPurchaseClaim).not.toHaveBeenCalled();
+      });
+
+      it("gives the recipient's claim back if the ownership change fails", async () => {
+        mockPendingTransfer(11);
+        prisma.$transaction.mockRejectedValue(new Error('db down'));
+
+        await expect(
+          service.acceptTransfer('user-2', 'transfer-1', notice),
+        ).rejects.toThrow('db down');
+
+        expect(inventory.releaseGroupPurchaseClaim).toHaveBeenCalledWith(
+          'session-1',
+          'user-2',
+        );
+        expect(inventory.releaseGroupPurchaseClaim).not.toHaveBeenCalledWith(
+          'session-1',
+          'user-1',
+        );
+      });
+
+      it('leaves claims alone entirely for a non-group order', async () => {
+        mockPendingTransfer(null);
+
+        await service.acceptTransfer('user-2', 'transfer-1', notice);
+
+        expect(inventory.claimGroupPurchase).not.toHaveBeenCalled();
+        expect(inventory.releaseGroupPurchaseClaim).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('findOrder', () => {

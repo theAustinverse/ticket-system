@@ -224,11 +224,20 @@ enum OrderStatus {
 /// actually changes; nothing moves on creation alone.
 model TicketTransfer {
   id          String               @id @default(cuid())
-  order       Order                @relation(fields: [orderId], references: [id])
+  /// Cascades with the order/either party on hard delete, same as
+  /// OrderHistory. These were ON DELETE RESTRICT, which made an order (or a
+  /// user) that had ever been involved in a transfer — even a rejected or
+  /// cancelled one — undeletable: AdminService.deleteOrder/deleteUser had
+  /// already released the order's stock by the time the delete hit the
+  /// constraint, so the seat came back to the pool while the order stayed
+  /// live, and every retry released it again. The audit trail of the
+  /// transfer survives in OrderHistory, which denormalizes its actor label
+  /// precisely so it stays readable after the row it referred to is gone.
+  order       Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
   orderId     String
-  fromUser    User                 @relation("TransferFrom", fields: [fromUserId], references: [id])
+  fromUser    User                 @relation("TransferFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
   fromUserId  String
-  toUser      User                 @relation("TransferTo", fields: [toUserId], references: [id])
+  toUser      User                 @relation("TransferTo", fields: [toUserId], references: [id], onDelete: Cascade)
   toUserId    String
   status      TicketTransferStatus @default(PENDING)
   createdAt   DateTime             @default(now())

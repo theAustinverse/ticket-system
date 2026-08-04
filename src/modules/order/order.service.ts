@@ -648,16 +648,60 @@ export class OrderService {
     }
 
     const previousOwnerId = transfer.order.userId;
-    const [, updatedOrder] = await this.prisma.$transaction([
-      this.prisma.ticketTransfer.update({
-        where: { id: transferId },
-        data: { status: 'ACCEPTED', respondedAt: new Date() },
-      }),
-      this.prisma.order.update({
-        where: { id: transfer.orderId },
-        data: { userId },
-      }),
-    ]);
+    const { ticketType } = transfer.order;
+    const isGroupBundle = ticketType.fixedQuantity != null;
+
+    // "One group bundle per person per session" is enforced by a Redis claim
+    // taken at purchase time and keyed by (session, owner) — so a transfer
+    // has to carry the claim across with the ticket. Left alone, the
+    // recipient never holds a claim of their own and could accept bundle
+    // after bundle, while the sender stays locked out of ever buying another
+    // one: the claim has no TTL, so nothing eventually frees it. Stake the
+    // recipient's claim before the ownership change lands, so a recipient
+    // who already has a bundle is turned away rather than handed a second.
+    let claimedForRecipient = false;
+    if (isGroupBundle) {
+      claimedForRecipient = await this.inventory.claimGroupPurchase(
+        ticketType.sessionId,
+        userId,
+      );
+      if (!claimedForRecipient) {
+        throw new BadRequestException(
+          'You already hold a group ticket bundle for this session and cannot accept another',
+        );
+      }
+    }
+
+    let updatedOrder;
+    try {
+      [, updatedOrder] = await this.prisma.$transaction([
+        this.prisma.ticketTransfer.update({
+          where: { id: transferId },
+          data: { status: 'ACCEPTED', respondedAt: new Date() },
+        }),
+        this.prisma.order.update({
+          where: { id: transfer.orderId },
+          data: { userId },
+        }),
+      ]);
+    } catch (error) {
+      // Ownership never moved — don't leave the recipient holding a claim
+      // against a bundle they don't own.
+      if (claimedForRecipient) {
+        await this.inventory
+          .releaseGroupPurchaseClaim(ticketType.sessionId, userId)
+          .catch(() => {});
+      }
+      throw error;
+    }
+
+    // Only now that the ticket has actually left the previous owner does
+    // their claim come free.
+    if (isGroupBundle) {
+      await this.inventory
+        .releaseGroupPurchaseClaim(ticketType.sessionId, previousOwnerId)
+        .catch(() => {});
+    }
 
     await recordOrderHistory(this.prisma, {
       orderId: transfer.orderId,

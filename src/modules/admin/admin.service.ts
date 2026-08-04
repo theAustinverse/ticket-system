@@ -147,12 +147,22 @@ export class AdminService {
   /**
    * Releases an order's reserved stock the same way order cancellation
    * does — via the shared pool + group-cap counter when the ticket type
-   * uses one, or a plain per-ticket-type release otherwise.
+   * uses one, or a plain per-ticket-type release otherwise. For a group
+   * bundle it also frees the buyer's one-bundle-per-session claim, which
+   * otherwise has no TTL and would lock them out of ever buying another
+   * bundle for that session.
+   *
+   * **Call this only after the delete has actually committed.** Releasing
+   * first and deleting second means a delete that fails hands the seat back
+   * to the pool while the order is still live — and every retry hands back
+   * another one.
    */
   private async releaseOrderStock(order: {
+    userId: string;
     quantity: number;
     ticketType: {
       id: string;
+      sessionId: string;
       fixedQuantity: number | null;
       sharedStockKey: string | null;
       maxGroupOrders: number | null;
@@ -171,12 +181,19 @@ export class AdminService {
     } else {
       await this.inventory.releaseStock(stockKey, order.quantity);
     }
+
+    if (order.ticketType.fixedQuantity !== null) {
+      await this.inventory.releaseGroupPurchaseClaim(
+        order.ticketType.sessionId,
+        order.userId,
+      );
+    }
   }
 
   /**
    * Deletes a user and all of their orders. Any order that still held stock
-   * (PENDING/PAID) has that stock released back to the pool first, same as
-   * a normal cancellation — otherwise those seats would be lost forever.
+   * (PENDING/PAID) has that stock released back to the pool once the delete
+   * has committed — otherwise those seats would be lost forever.
    */
   async deleteUser(id: string) {
     const user = await this.prisma.user.findUnique({
@@ -185,14 +202,14 @@ export class AdminService {
     });
     if (!user) throw new NotFoundException(`User ${id} not found`);
 
+    await this.prisma.order.deleteMany({ where: { userId: id } });
+    await this.prisma.user.delete({ where: { id } });
+
     for (const order of user.orders) {
       if (REFUNDABLE_STATUSES.includes(order.status)) {
         await this.releaseOrderStock(order);
       }
     }
-
-    await this.prisma.order.deleteMany({ where: { userId: id } });
-    await this.prisma.user.delete({ where: { id } });
 
     return { deleted: true };
   }
@@ -208,8 +225,8 @@ export class AdminService {
   /**
    * Deletes a single order (e.g. an admin rejecting a suspected duplicate/
    * fraudulent individual-ticket order after manual review). Releases its
-   * stock back to the pool first if it still held any, same as a normal
-   * cancellation.
+   * stock back to the pool once the delete has committed if it still held
+   * any, same as a normal cancellation.
    */
   async deleteOrder(id: string) {
     const order = await this.prisma.order.findUnique({
@@ -218,10 +235,11 @@ export class AdminService {
     });
     if (!order) throw new NotFoundException(`Order ${id} not found`);
 
+    await this.prisma.order.delete({ where: { id } });
+
     if (REFUNDABLE_STATUSES.includes(order.status)) {
       await this.releaseOrderStock(order);
     }
-    await this.prisma.order.delete({ where: { id } });
 
     return { deleted: true };
   }
