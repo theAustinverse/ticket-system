@@ -1,0 +1,79 @@
+name: CI
+
+# Pushing to main is what deploys this project — Vercel and Railway both build
+# straight from it. That is fine from a laptop where the full suite runs before
+# every push, but not from a phone, where it can't. This workflow is the
+# substitute: every push gets typechecked, tested and built in the cloud, and
+# the result shows up in the GitHub mobile app within a couple of minutes.
+#
+# It reports, it does not gate. Vercel and Railway start their builds off the
+# same push and don't wait for this. A red check means "the deploy that just
+# went out is broken, go revert" — not "the deploy was prevented."
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      # src/generated/prisma is gitignored, so a clean checkout has no client
+      # and everything below fails without this. Same reason the Dockerfile
+      # runs it explicitly. Needs no DATABASE_URL and no live database.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc -p tsconfig.build.json --noEmit
+
+      # The unit suite is fully mocked — no Postgres, no Redis, no .env. The
+      # integration and e2e suites do need real services and are deliberately
+      # left out; they run locally against docker-compose.
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      # Vercel injects the real value; this only needs to be present and
+      # well-formed so the built bundle resembles what actually ships.
+      - name: Build
+        env:
+          VITE_API_BASE_URL: https://api-production-0c47.up.railway.app
+        run: npx vite build
