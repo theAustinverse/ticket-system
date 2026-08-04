@@ -170,7 +170,7 @@ export function AdminUsersPage() {
       )}
 
       <div className="admin-table-wrap">
-        <table className="admin-table">
+        <table className="admin-table admin-table-cards">
           <thead>
             <tr>
               <th>
@@ -194,25 +194,25 @@ export function AdminUsersPage() {
           <tbody>
             {visibleUsers.map((user) => (
               <tr key={user.id}>
-                <td>
+                <td data-label="選取">
                   <input
                     type="checkbox"
                     checked={selected.has(user.id)}
                     onChange={() => toggleSelected(user.id)}
                   />
                 </td>
-                <td>{user.email}</td>
-                <td>{user.name ?? '未填寫'}</td>
-                <td>
+                <td data-label="Email">{user.email}</td>
+                <td data-label="姓名">{user.name ?? '未填寫'}</td>
+                <td data-label="聯絡資訊">
                   LINE: {user.lineId ?? '未填寫'}
                   <br />
                   電話: {user.phone ?? '未填寫'}
                 </td>
-                <td>{user.team ?? '未填寫'}</td>
-                <td>
+                <td data-label="所屬體系/系統">{user.team ?? '未填寫'}</td>
+                <td data-label="角色">
                   <span className="badge">{user.role}</span>
                 </td>
-                <td>{new Date(user.createdAt).toLocaleString()}</td>
+                <td data-label="註冊時間">{new Date(user.createdAt).toLocaleString()}</td>
               </tr>
             ))}
           </tbody>

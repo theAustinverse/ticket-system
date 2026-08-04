@@ -339,7 +339,10 @@ export function AdminOrdersPage() {
       )}
 
       <div className="admin-table-wrap">
-        <table className="admin-table">
+        {/* admin-table-cards: below 768px this table reflows from a 14-column
+            grid into one card per order — see styles.css. Each td carries a
+            data-label that becomes its row heading once the thead is hidden. */}
+        <table className="admin-table admin-table-cards">
           <thead>
             <tr>
               <th>
@@ -376,25 +379,25 @@ export function AdminOrdersPage() {
               return (
               <tbody key={row.id}>
               <tr>
-                <td>
+                <td data-label="選取">
                   <input
                     type="checkbox"
                     checked={selected.has(row.id)}
                     onChange={() => toggleSelected(row.id)}
                   />
                 </td>
-                <td>{row.userEmail}</td>
-                <td>{row.registrantName}</td>
-                <td>
+                <td data-label="Email">{row.userEmail}</td>
+                <td data-label="姓名">{row.registrantName}</td>
+                <td data-label="聯絡資訊">
                   LINE: {row.registrantLineId}
                   <br />
                   電話: {row.registrantPhone}
                 </td>
-                <td>{row.registrantTeam}</td>
-                <td>{row.mealPreference}</td>
-                <td>{row.ticketTypeName}</td>
-                <td>{row.quantity}</td>
-                <td>
+                <td data-label="所屬體系/系統">{row.registrantTeam}</td>
+                <td data-label="用餐需求">{row.mealPreference}</td>
+                <td data-label="票種">{row.ticketTypeName}</td>
+                <td data-label="張數">{row.quantity}</td>
+                <td data-label="團體/親友名單">
                   {(groupStatus || companionStatus) ? (
                     <button
                       type="button"
@@ -414,12 +417,12 @@ export function AdminOrdersPage() {
                     <span className="hint">—</span>
                   )}
                 </td>
-                <td>
+                <td data-label="狀態">
                   <span className="badge">{row.status}</span>
                 </td>
-                <td>{new Date(row.createdAt).toLocaleString()}</td>
-                <td className="admin-table-id">{row.id}</td>
-                <td>
+                <td data-label="訂購時間">{new Date(row.createdAt).toLocaleString()}</td>
+                <td className="admin-table-id" data-label="訂票編號">{row.id}</td>
+                <td data-label="備註">
                   <input
                     className="admin-note-input"
                     value={noteDrafts[row.id] ?? ''}
@@ -432,7 +435,7 @@ export function AdminOrdersPage() {
                     onBlur={() => handleNoteBlur(row)}
                   />
                 </td>
-                <td>
+                <td data-label="歷程">
                   <button
                     type="button"
                     className="admin-expand-toggle"

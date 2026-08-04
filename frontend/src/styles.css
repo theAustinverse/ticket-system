@@ -1149,6 +1149,137 @@ button:disabled {
   margin-top: 0.75rem;
 }
 
+/* ---------------------------------------------------------------------------
+   Admin on small screens.
+
+   The back office is a wide, dense grid — the orders table alone is 14
+   columns and relies on `white-space: nowrap`, which on a phone means
+   scrolling sideways through every record to read one of them. Below 768px
+   the data tables reflow into one card per record: the thead is hidden and
+   each cell prints its own heading from the `data-label` the JSX supplies.
+
+   The card boundary is the `tr`, not the `tbody`, because the two tables
+   nest differently — AdminUsersPage puts every row in one shared tbody,
+   while AdminOrdersPage gives each order its own tbody so its expandable
+   detail rows stay grouped. Keying off `tr` covers both; the orders page's
+   detail rows then get styled as a continuation panel attached to the card
+   above them rather than as separate cards.
+   --------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+  /* The desktop wrapper is a scroll viewport with its own frame; on mobile the
+     cards carry their own borders, so it just gets in the way. */
+  .admin-table-wrap:has(.admin-table-cards) {
+    max-height: none;
+    overflow: visible;
+    border: none;
+    background: none;
+  }
+
+  .admin-table-cards,
+  .admin-table-cards tbody,
+  .admin-table-cards tr,
+  .admin-table-cards td {
+    display: block;
+    width: 100%;
+  }
+
+  .admin-table-cards {
+    white-space: normal;
+  }
+
+  .admin-table-cards thead {
+    display: none;
+  }
+
+  .admin-table-cards tr {
+    margin-bottom: 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: rgba(6, 4, 3, 0.55);
+    overflow: hidden;
+  }
+
+  .admin-table-cards td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0.7rem;
+    border-bottom: 1px solid rgba(201, 162, 39, 0.12);
+    text-align: right;
+  }
+
+  .admin-table-cards td:last-child {
+    border-bottom: none;
+  }
+
+  .admin-table-cards td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    color: var(--gold-dim);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-align: left;
+  }
+
+  /* The order id is long and monospaced — let it wrap instead of forcing the
+     card wider than the viewport. */
+  .admin-table-cards .admin-table-id {
+    word-break: break-all;
+  }
+
+  .admin-table-cards .admin-note-input {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  /* Expandable detail (group members, companions, history): full-bleed inside
+     the card, no label, and allowed to scroll sideways on its own since the
+     sub-tables are still genuinely tabular. */
+  .admin-table-cards .admin-group-detail-row {
+    margin-top: -0.85rem;
+    margin-bottom: 0.85rem;
+    border-top: none;
+    border-radius: 0 0 3px 3px;
+  }
+
+  .admin-table-cards .admin-group-detail-row td {
+    display: block;
+    text-align: left;
+    padding: 0.6rem 0.7rem;
+  }
+
+  .admin-table-cards .admin-group-detail-row td::before {
+    content: none;
+  }
+
+  /* The leading spacer cell that pads the detail row on desktop. */
+  .admin-table-cards .admin-group-detail-row td:empty {
+    display: none;
+  }
+
+  .admin-group-detail {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .admin-history-json {
+    max-width: none;
+  }
+
+  /* Toolbar: the search field's 280px floor pushes the row off-screen. */
+  .admin-search,
+  .admin-search input {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-toolbar select,
+  .admin-toolbar > button {
+    flex: 1 1 auto;
+  }
+}
+
 .admin-history-json {
   max-width: 260px;
   white-space: pre-wrap;
