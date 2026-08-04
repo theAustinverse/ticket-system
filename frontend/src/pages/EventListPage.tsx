@@ -30,6 +30,8 @@ export function EventListPage() {
   return (
     <div className="page">
       <h1>活動列表</h1>
+      {/* 同步測試用標記，驗證完請連同 SYNC-TEST.md 一起移除 */}
+      <p style={{ opacity: 0.6, fontSize: '0.85rem' }}>同步測試 2026-08-05 00:26</p>
       {events.length === 0 && <p>目前沒有活動</p>}
       <ul className={`event-list ${token ? '' : 'event-list-guest'}`}>
         {events.map((event) => (
