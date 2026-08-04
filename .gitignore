@@ -7,3 +7,8 @@ coverage
 .env
 
 /src/generated/prisma
+
+# Claude Code: share settings.json, keep throwaway worktrees and
+# per-machine permission grants out of the repo.
+/.claude/worktrees
+/.claude/settings.local.json

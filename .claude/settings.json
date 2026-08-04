@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(git push*)",
+      "PowerShell(git push*)",
+      "Bash(railway up*)",
+      "Bash(railway redeploy*)",
+      "Bash(railway down*)",
+      "Bash(railway run*)",
+      "PowerShell(railway up*)",
+      "PowerShell(railway redeploy*)",
+      "Bash(vercel deploy*)",
+      "Bash(vercel --prod*)",
+      "Bash(vercel rollback*)",
+      "Bash(vercel promote*)",
+      "PowerShell(vercel deploy*)",
+      "PowerShell(vercel --prod*)",
+      "Bash(npx prisma migrate deploy*)",
+      "Bash(npx prisma migrate reset*)",
+      "Bash(npx prisma db push*)",
+      "Bash(npx prisma db execute*)",
+      "PowerShell(npx prisma migrate reset*)",
+      "PowerShell(npx prisma db push*)"
+    ]
+  }
+}
