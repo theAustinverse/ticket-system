@@ -49,6 +49,65 @@ k6 run -e BASE_URL=http://localhost:3000 -e TICKET_TYPE_ID=<id> -e TOTAL_STOCK=2
 
 **Prisma**: generated client lives at `src/generated/prisma`, not `node_modules`. When no local DB is available to run `prisma migrate dev`, hand-write the migration SQL under `prisma/migrations/<timestamp>_<name>/migration.sql` — match the style of recent migrations exactly.
 
+## Working across machines (desktop, phone, cloud sandbox)
+
+This project gets edited from more than one place: the desktop, and Claude
+Code sessions on the web/phone that run in an ephemeral cloud container. The
+desktop is frequently offline while cloud work happens. `origin` on GitHub is
+the only thing both sides share — treat it as the single source of truth, not
+either machine's working copy.
+
+**A cloud/phone session must never end with work only in its container.** The
+container is reclaimed after a period of inactivity and everything in it is
+gone — uncommitted edits included. So: commit, push the branch, and get it
+onto `main`. Work that isn't pushed does not exist.
+
+**Pushing `main` deploys.** Railway and Vercel both build straight off `main`,
+and Railway runs `prisma migrate deploy` on every boot, so a merge to `main`
+is a production release. CI (`.github/workflows/ci.yml`) reports on the push
+but does not gate it — a red check means "the deploy that just went out is
+broken, go revert", not "the deploy was blocked".
+
+**Desktop, on reconnecting** — before starting any new work:
+
+```bash
+git fetch origin
+git status                       # anything uncommitted here comes first
+```
+
+Then, depending on what the desktop is holding:
+
+```bash
+# Nothing local — the common case. Refuse to merge rather than create a
+# surprise merge commit; if this errors, the desktop has commits and you
+# want the rebase line below instead.
+git pull --ff-only origin main
+
+# Local commits that never got pushed — replay them on top of the cloud work.
+git pull --rebase origin main
+
+# Uncommitted WIP — park it, sync, put it back.
+git stash && git pull --ff-only origin main && git stash pop
+```
+
+**After any pull, resync what the repo generates but doesn't track.** Skipping
+this is the usual cause of "it works in the cloud but not on my machine":
+
+```bash
+npm ci && npx prisma generate    # if package-lock.json or schema.prisma moved
+cd frontend && npm ci            # if frontend/package-lock.json moved
+npx prisma migrate deploy        # if prisma/migrations/ gained a directory
+```
+
+That last one matters most. `src/generated/prisma` is gitignored and the local
+database is not in version control, so a pull that brings in a new migration
+leaves the desktop's Postgres behind the schema the code now expects — with
+confusing runtime errors rather than an obvious failure.
+
+**Never force-push `main`.** Two machines that disagree about `main`'s history
+is the one failure mode this whole arrangement can't recover from cleanly.
+Rewriting a shared feature branch is recoverable; rewriting `main` is not.
+
 ## Architecture
 
 ### Stock control — the never-oversell invariant
