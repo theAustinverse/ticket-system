@@ -175,7 +175,7 @@ function TicketTypeRow({
         )}
       </div>
       <span className="ticket-type-hint">
-        {token ? remainingStockHint(ticketType) : null}
+        {token && !closed ? remainingStockHint(ticketType) : null}
       </span>
       <div className="ticket-type-action">
         <button
@@ -294,7 +294,12 @@ export function EventDetailPage() {
                 <h3>
                   {batch.name} <span className="batch-status">{status.label}</span>
                 </h3>
+                {/* Remaining counts are hidden once a wave closes: whatever is
+                    left is no longer buyable (StockSweepService moves it on to
+                    the next wave), so showing "剩餘 8 張" next to a 已截止 badge
+                    reads as stock someone could still get. */}
                 {token &&
+                  !status.closed &&
                   sharedPoolSummaries(batch.ticketTypes).map((pool) => (
                     <p key={pool.key} className="hint pool-summary">
                       {pool.names.join('、')} 共用票池：剩餘 {pool.remaining ?? '—'} /{' '}
