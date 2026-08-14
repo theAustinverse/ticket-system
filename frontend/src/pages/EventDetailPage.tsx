@@ -30,25 +30,35 @@ function formatTaipeiDateTime(iso: string): string {
   })} (台北時間)`;
 }
 
-function batchStatus(batch: SaleBatch): { label: string; open: boolean; closed: boolean } {
+/**
+ * `now` is passed in rather than read via Date.now() here so the caller's
+ * ticking clock state drives re-evaluation — see EventDetailPage's `now`
+ * state. Without that, this only ever ran once per mount/fetch, so a wave's
+ * "尚未開賣" button stayed disabled even after its saleStartAt passed until
+ * the visitor manually refreshed the page — exactly the moment a live rush
+ * can't afford that.
+ */
+function batchStatus(
+  batch: SaleBatch,
+  now: number,
+): { label: string; open: boolean; closed: boolean } {
   if (!batch.saleStartAt) return { label: '開賣時間未定', open: false, closed: false };
   const startsAt = new Date(batch.saleStartAt).getTime();
-  if (startsAt > Date.now()) {
+  if (startsAt > now) {
     return {
       label: `開賣時間：${formatTaipeiDateTime(batch.saleStartAt)}`,
       open: false,
       closed: false,
     };
   }
-  if (batch.saleEndAt && new Date(batch.saleEndAt).getTime() <= Date.now()) {
+  if (batch.saleEndAt && new Date(batch.saleEndAt).getTime() <= now) {
     return { label: '已截止', open: false, closed: true };
   }
   return { label: '搶購中', open: true, closed: false };
 }
 
 /** The soonest still-locked batch across every session — the one worth counting down to. */
-function earliestUpcomingBatch(sessions: EventDetail['sessions']): SaleBatch | null {
-  const now = Date.now();
+function earliestUpcomingBatch(sessions: EventDetail['sessions'], now: number): SaleBatch | null {
   let candidate: SaleBatch | null = null;
   for (const session of sessions) {
     for (const batch of session.batches) {
@@ -194,6 +204,7 @@ export function EventDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [profileIncomplete, setProfileIncomplete] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (!eventId) return;
@@ -217,11 +228,32 @@ export function EventDetailPage() {
       .catch(() => {});
   }, [token]);
 
+  /**
+   * Ticks `now` every second so batchStatus/earliestUpcomingBatch re-run on
+   * a live clock instead of the one captured when the event first loaded —
+   * otherwise a wave whose saleStartAt passes while someone is sitting on
+   * this page never flips its button from disabled to "搶票" until a manual
+   * refresh. Stops itself once nothing is still upcoming, so a page loaded
+   * well after every wave has opened doesn't tick forever for no reason.
+   */
+  useEffect(() => {
+    if (!event) return;
+    if (!earliestUpcomingBatch(event.sessions, Date.now())) return;
+    const id = setInterval(() => {
+      const currentNow = Date.now();
+      setNow(currentNow);
+      if (!earliestUpcomingBatch(event.sessions, currentNow)) {
+        clearInterval(id);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [event]);
+
   if (loading) return <div className="page">載入中…</div>;
   if (error) return <div className="page error">{error}</div>;
   if (!event) return <div className="page">找不到活動</div>;
 
-  const countdownBatch = earliestUpcomingBatch(event.sessions);
+  const countdownBatch = earliestUpcomingBatch(event.sessions, now);
 
   return (
     <div className="page">
@@ -256,7 +288,7 @@ export function EventDetailPage() {
             <h2>登入後才可查看用餐地點</h2>
           )}
           {session.batches.map((batch) => {
-            const status = batchStatus(batch);
+            const status = batchStatus(batch, now);
             return (
               <div key={batch.id} className="batch-block">
                 <h3>
