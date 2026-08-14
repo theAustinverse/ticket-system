@@ -13,6 +13,7 @@ import type {
   OrderWithSession,
   QueueStatus,
   RegistrationInfo,
+  SaleBatch,
   TicketTransfer,
   TicketType,
   UserProfile,
@@ -82,6 +83,18 @@ export const api = {
 
   getTicketType: (id: string) =>
     request<TicketType>(`/events/ticket-types/${id}`),
+
+  /** `saleStartAt`/`saleEndAt`: ISO string to set, null to clear, or omit to leave untouched. */
+  adminUpdateBatch: (
+    authToken: string,
+    batchId: string,
+    dto: { saleStartAt?: string | null; saleEndAt?: string | null },
+  ) =>
+    request<SaleBatch>(`/events/batches/${batchId}`, {
+      method: 'PATCH',
+      headers: authHeader(authToken),
+      body: JSON.stringify(dto),
+    }),
 
   enterQueue: (authToken: string, ticketTypeId: string, passcode?: string) =>
     request<{ token: string }>(`/queue/${ticketTypeId}/enter`, {

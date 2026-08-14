@@ -17,6 +17,7 @@ import { AdminLoginPage } from './pages/AdminLoginPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AdminOrdersPage } from './pages/AdminOrdersPage';
+import { AdminEventsPage } from './pages/AdminEventsPage';
 import { AdminChatPage } from './pages/AdminChatPage';
 import { AdminAiImagePage } from './pages/AdminAiImagePage';
 import { Lab3DPage } from './pages/Lab3DPage';
@@ -102,6 +103,7 @@ export function App() {
         <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/admin/orders" element={<AdminOrdersPage />} />
+        <Route path="/admin/events" element={<AdminEventsPage />} />
         <Route path="/admin/chat" element={<AdminChatPage />} />
         <Route path="/admin/ai-image" element={<AdminAiImagePage />} />
         {/* Not linked from any navbar — internal-only POC route. */}

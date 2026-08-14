@@ -25,6 +25,10 @@ export function AdminDashboardPage() {
           <h2>訂單管理</h2>
           <p className="hint">瀏覽所有訂單、依體系篩選、查看各體系訂票排名</p>
         </Link>
+        <Link to="/admin/events" className="admin-menu-card">
+          <h2>波次開賣時間管理</h2>
+          <p className="hint">設定每一波的開賣／截止時間，前台會自動顯示倒數計時</p>
+        </Link>
         <Link to="/admin/chat" className="admin-menu-card">
           <h2>心情便利貼管理</h2>
           <p className="hint">瀏覽使用者留言、刪除不當內容</p>
