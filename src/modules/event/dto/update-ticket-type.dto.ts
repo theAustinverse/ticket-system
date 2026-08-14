@@ -6,6 +6,17 @@ import { IsBoolean, IsInt, IsOptional, IsString, Min, MinLength } from 'class-va
  * shared pool, or turning on multi-quantity purchase for a later wave).
  */
 export class UpdateTicketTypeDto {
+  /**
+   * The ticket type's own capacity. On a pooled ticket type (sharedStockKey
+   * set) this is display/record-keeping only — the real ceiling is the
+   * pool's poolTotalQuantity, updated separately. Either way this does NOT
+   * touch Redis; see the doc comment on EventService.updateTicketType.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  totalQuantity?: number;
+
   @IsOptional()
   @IsInt()
   @Min(1)

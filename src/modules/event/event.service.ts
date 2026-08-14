@@ -166,10 +166,13 @@ export class EventService {
   }
 
   /**
-   * Admin-only partial update — currently used to migrate an existing ticket
-   * type onto a shared stock pool / group cap / passcode gate after the
-   * fact. Does not touch Redis; call AdminService.resetStock afterwards to
-   * resync the shared pool and group counter from real Postgres order data.
+   * Admin-only partial update — used to migrate an existing ticket type onto
+   * a shared stock pool / group cap / passcode gate after the fact, or to
+   * correct its capacity (e.g. undoing a stock-sweep amount the admin didn't
+   * want). Does not touch Redis; call AdminService.resetStock afterwards to
+   * resync stock from real Postgres order data — safe to do any time since
+   * it derives the new Redis count from totalQuantity minus actual PAID
+   * orders rather than blindly overwriting it.
    */
   async updateTicketType(id: string, dto: UpdateTicketTypeDto) {
     await this.findTicketType(id);

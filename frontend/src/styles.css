@@ -1107,6 +1107,18 @@ button:disabled {
   font-size: 0.82rem;
 }
 
+.admin-tickettype-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+}
+
+.admin-tickettype-row + .admin-tickettype-row {
+  border-top: 1px solid rgba(201, 162, 39, 0.12);
+}
+
 .admin-subtable {
   width: 100%;
   border-collapse: collapse;
@@ -1231,6 +1243,21 @@ button:disabled {
   .admin-table-cards .admin-note-input {
     min-width: 0;
     flex: 1 1 auto;
+  }
+
+  /* Multiple ticket types in one batch (e.g. wave 1's early-bird pair) need
+     to stack under the "票種" label rather than being squeezed into the
+     narrow trailing half of the label/value split every other cell uses. */
+  .admin-table-cards .admin-tickettype-list {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .admin-table-cards .admin-tickettype-row {
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 
   /* Expandable detail (group members, companions, history): full-bleed inside

@@ -96,6 +96,23 @@ export const api = {
       body: JSON.stringify(dto),
     }),
 
+  /**
+   * Updates the row only — does not touch Redis stock. Follow with
+   * adminResetStock so the sellable count actually reflects the new
+   * totalQuantity (it derives the new count from real PAID orders rather
+   * than overwriting blindly, so it's always safe to call).
+   */
+  adminUpdateTicketType: (
+    authToken: string,
+    ticketTypeId: string,
+    dto: { totalQuantity?: number },
+  ) =>
+    request<TicketType>(`/events/ticket-types/${ticketTypeId}`, {
+      method: 'PATCH',
+      headers: authHeader(authToken),
+      body: JSON.stringify(dto),
+    }),
+
   enterQueue: (authToken: string, ticketTypeId: string, passcode?: string) =>
     request<{ token: string }>(`/queue/${ticketTypeId}/enter`, {
       method: 'POST',

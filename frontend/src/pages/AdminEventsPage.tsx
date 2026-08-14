@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { decodeJwtRole } from '../jwt';
-import type { EventDetail, EventSummary, SaleBatch } from '../api/types';
+import type { EventDetail, EventSummary, SaleBatch, TicketType } from '../api/types';
 
 /**
  * The event is always Asia/Taipei local time regardless of admin's own
@@ -39,12 +39,79 @@ function formatTaipeiDisplay(iso: string | null): string {
   })} (台北時間)`;
 }
 
+/**
+ * Editing totalQuantity only updates the Postgres row — the sellable count
+ * in Redis is untouched until adminResetStock runs (see
+ * EventService.updateTicketType's doc comment). Calling it automatically
+ * after every save means there's no separate manual step to forget, which
+ * matters more than usual here since this is meant to be usable from a
+ * phone. resetStock derives the new Redis count from totalQuantity minus
+ * real PAID orders rather than overwriting blindly, so it's always safe to
+ * call — including when it touches ticket types this admin isn't editing.
+ */
+function TicketTypeQuantityEditor({
+  ticketType,
+  onSaved,
+}: {
+  ticketType: TicketType;
+  onSaved: (updated: TicketType) => void;
+}) {
+  const { token } = useAdminAuth();
+  const [draft, setDraft] = useState(String(ticketType.totalQuantity));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const parsed = Number(draft);
+  const valid = draft.trim() !== '' && Number.isInteger(parsed) && parsed >= 0;
+  const dirty = valid && parsed !== ticketType.totalQuantity;
+
+  async function handleSave() {
+    if (!token || !valid) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api.adminUpdateTicketType(token, ticketType.id, {
+        totalQuantity: parsed,
+      });
+      await api.adminResetStock(token);
+      onSaved({ ...ticketType, ...updated, remainingStock: parsed });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '儲存失敗');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="admin-tickettype-row">
+      <span>{ticketType.name}</span>
+      <input
+        type="number"
+        min={0}
+        step={1}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        style={{ width: '5rem' }}
+      />
+      <button disabled={!dirty || saving} onClick={handleSave}>
+        {saving ? '儲存中…' : '儲存張數'}
+      </button>
+      {typeof ticketType.remainingStock === 'number' && (
+        <span className="hint">剩餘：{ticketType.remainingStock}</span>
+      )}
+      {error && <p className="error hint">{error}</p>}
+    </div>
+  );
+}
+
 function BatchRow({
   batch,
   onSaved,
+  onTicketTypeSaved,
 }: {
   batch: SaleBatch;
   onSaved: (updated: SaleBatch) => void;
+  onTicketTypeSaved: (updated: TicketType) => void;
 }) {
   const { token } = useAdminAuth();
   const [startDraft, setStartDraft] = useState(isoToTaipeiInputValue(batch.saleStartAt));
@@ -93,7 +160,11 @@ function BatchRow({
         <p className="hint">目前：{formatTaipeiDisplay(batch.saleEndAt)}</p>
       </td>
       <td data-label="票種">
-        {batch.ticketTypes.map((tt) => tt.name).join('、')}
+        <div className="admin-tickettype-list">
+          {batch.ticketTypes.map((tt) => (
+            <TicketTypeQuantityEditor key={tt.id} ticketType={tt} onSaved={onTicketTypeSaved} />
+          ))}
+        </div>
       </td>
       <td data-label="操作">
         <button disabled={!dirty || saving} onClick={handleSave}>
@@ -140,6 +211,24 @@ export function AdminEventsPage() {
     );
   }
 
+  function updateTicketTypeInState(updated: TicketType) {
+    setEvents(
+      (prev) =>
+        prev?.map((event) => ({
+          ...event,
+          sessions: event.sessions.map((session) => ({
+            ...session,
+            batches: session.batches.map((batch) => ({
+              ...batch,
+              ticketTypes: batch.ticketTypes.map((tt) =>
+                tt.id === updated.id ? { ...tt, ...updated } : tt,
+              ),
+            })),
+          })),
+        })) ?? null,
+    );
+  }
+
   if (error) return <div className="page error">{error}</div>;
   if (!events) return <div className="page">載入中…</div>;
 
@@ -175,6 +264,7 @@ export function AdminEventsPage() {
                       key={batch.id}
                       batch={batch}
                       onSaved={(updated) => updateBatchInState(session.id, updated)}
+                      onTicketTypeSaved={updateTicketTypeInState}
                     />
                   ))}
                 </tbody>
