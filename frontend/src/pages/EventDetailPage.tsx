@@ -104,45 +104,19 @@ function CountdownBanner({ batch }: { batch: SaleBatch }) {
   );
 }
 
-/**
- * A ticket type sharing a stock pool never shows its own per-row count —
- * the banner above the row already states the pool's true total/remaining,
- * and a second number invites being misread as separate capacity. Only a
- * ticket type with independent (non-pooled) stock shows its own count.
+/*
+ * Remaining-stock counts are deliberately not surfaced to buyers anywhere on
+ * this page — neither the per-ticket-type "剩餘 N 張" hint nor the shared-pool
+ * summary line that used to sit above a batch's rows. A live scarcity number
+ * is pressure the sale doesn't need to apply, and on a shared pool it was
+ * also genuinely hard to read correctly (a group-capped type reports a
+ * tighter number than the pool actually has).
+ *
+ * The data itself still arrives from the API and is still used: `soldOut`
+ * below reads ticketType.remainingStock directly to disable the button and
+ * label it 已售完. Admins keep a real count on /admin/events. Only the
+ * buyer-facing number is gone.
  */
-function remainingStockHint(ticketType: TicketType): string | null {
-  if (typeof ticketType.remainingStock !== 'number') return null;
-  if (ticketType.sharedStockKey) return null;
-  return `剩餘 ${ticketType.remainingStock} 張`;
-}
-
-/** One summary line per distinct shared pool within a batch — the pool's true total/remaining, since per-row numbers alone can't be summed. */
-function sharedPoolSummaries(ticketTypes: TicketType[]) {
-  const groups = new Map<string, TicketType[]>();
-  for (const tt of ticketTypes) {
-    if (!tt.sharedStockKey) continue;
-    const list = groups.get(tt.sharedStockKey) ?? [];
-    list.push(tt);
-    groups.set(tt.sharedStockKey, list);
-  }
-  return Array.from(groups.entries())
-    .filter(([, list]) => list.length > 1)
-    .map(([key, list]) => {
-      // A group-capped ticket type's remainingStock is tightened by its own
-      // bundle cap; whichever sibling has no such cap reports the pool's
-      // true remaining seats, so take the max across the group.
-      const remaining = list.reduce<number | null>((max, tt) => {
-        if (typeof tt.remainingStock !== 'number') return max;
-        return max === null ? tt.remainingStock : Math.max(max, tt.remainingStock);
-      }, null);
-      return {
-        key,
-        names: list.map((tt) => tt.name),
-        remaining,
-        total: list[0].poolTotalQuantity,
-      };
-    });
-}
 
 function TicketTypeRow({
   ticketType,
@@ -154,7 +128,6 @@ function TicketTypeRow({
   closed: boolean;
 }) {
   const navigate = useNavigate();
-  const { token } = useAuth();
   const required = ticketType.fixedQuantity ?? 1;
   const soldOut =
     typeof ticketType.remainingStock === 'number' &&
@@ -174,9 +147,6 @@ function TicketTypeRow({
           <span className="badge">每次限購 {ticketType.fixedQuantity} 張</span>
         )}
       </div>
-      <span className="ticket-type-hint">
-        {token && !closed ? remainingStockHint(ticketType) : null}
-      </span>
       <div className="ticket-type-action">
         <button
           disabled={!canBuy}
@@ -294,18 +264,6 @@ export function EventDetailPage() {
                 <h3>
                   {batch.name} <span className="batch-status">{status.label}</span>
                 </h3>
-                {/* Remaining counts are hidden once a wave closes: whatever is
-                    left is no longer buyable (StockSweepService moves it on to
-                    the next wave), so showing "剩餘 8 張" next to a 已截止 badge
-                    reads as stock someone could still get. */}
-                {token &&
-                  !status.closed &&
-                  sharedPoolSummaries(batch.ticketTypes).map((pool) => (
-                    <p key={pool.key} className="hint pool-summary">
-                      {pool.names.join('、')} 共用票池：剩餘 {pool.remaining ?? '—'} /{' '}
-                      {pool.total ?? '—'} 張
-                    </p>
-                  ))}
                 {batch.ticketTypes.map((tt) => (
                   <TicketTypeRow
                     key={tt.id}

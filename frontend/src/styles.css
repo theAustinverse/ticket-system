@@ -860,9 +860,12 @@ button:disabled {
 /* Grid (not flex) so every row's hint and button land in the same two
    fixed-width columns regardless of how long each row's own text is —
    flex-wrap let differing hint lengths push buttons out of alignment. */
+/* Two columns: ticket info, then the action button. There used to be a
+   middle track reserving 6.5rem for the "剩餘 N 張" hint; that hint is no
+   longer shown to buyers, so the track would only leave a dead gap. */
 .ticket-type-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(6.5rem, auto) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.4rem 1.2rem;
   padding: 0.9rem 0;
@@ -879,13 +882,6 @@ button:disabled {
   flex-wrap: wrap;
   gap: 0.5rem 0.7rem;
   min-width: 0;
-}
-
-.ticket-type-hint {
-  color: var(--paper-dim);
-  font-size: 0.85rem;
-  text-align: right;
-  white-space: nowrap;
 }
 
 .ticket-type-action {
@@ -913,20 +909,12 @@ button:disabled {
   white-space: nowrap;
 }
 
-/* On narrow screens, stack info / hint / button into their own full-width
-   lines instead of squeezing three grid columns into too little space. */
+/* On narrow screens, stack info and button into their own full-width lines
+   instead of squeezing both grid columns into too little space. */
 @media (max-width: 480px) {
   .ticket-type-row {
     grid-template-columns: 1fr;
     row-gap: 0.5rem;
-  }
-
-  .ticket-type-hint {
-    text-align: left;
-  }
-
-  .ticket-type-hint:empty {
-    display: none;
   }
 
   .ticket-type-action button {
