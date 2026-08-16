@@ -233,7 +233,7 @@ export function AdminEventsPage() {
   if (!events) return <div className="page">載入中…</div>;
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <Link to="/admin/dashboard" className="link-button">
         ← 返回後台選單
       </Link>
@@ -244,11 +244,11 @@ export function AdminEventsPage() {
       {events.map((event) => (
         <div key={event.id}>
           {event.sessions.map((session) => (
-            <div key={session.id} className="admin-table-wrap">
+            <div key={session.id} className="admin-table-wrap is-fit">
               <h2>
                 {event.name} — {session.venue}
               </h2>
-              <table className="admin-table admin-table-cards">
+              <table className="admin-table admin-table-cards is-fit">
                 <thead>
                   <tr>
                     <th>波次</th>

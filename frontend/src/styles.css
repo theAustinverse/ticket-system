@@ -1059,6 +1059,29 @@ button:disabled {
   background: rgba(6, 4, 3, 0.5);
 }
 
+/*
+ * Variant for short, form-like admin tables (the wave editor): a handful of
+ * rows, but wide cells — datetime pickers plus a "目前：…（台北時間）" caption
+ * under each. The default table's `white-space: nowrap` makes those captions
+ * one long line, which pushes the grid past the viewport and buries the last
+ * columns behind a horizontal scrollbar. Here the content wraps instead, so
+ * everything fits the page width; and with only a few rows there's nothing
+ * for the 75vh scroll viewport to do either.
+ */
+.admin-table-wrap.is-fit {
+  max-height: none;
+  overflow: visible;
+}
+
+.admin-table.is-fit {
+  white-space: normal;
+}
+
+/* Let the pickers shrink with their column rather than forcing it wider. */
+.admin-table.is-fit input[type='datetime-local'] {
+  max-width: 100%;
+}
+
 .admin-table {
   width: 100%;
   border-collapse: collapse;
