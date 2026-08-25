@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -141,6 +141,48 @@ export class EventService {
       data.stockSweepDone = dto.stockSweepDone;
     }
     return this.prisma.saleBatch.update({ where: { id: batchId }, data });
+  }
+
+  /**
+   * Admin-only: permanently removes a wave that was never actually sold —
+   * e.g. a planned wave (第三波) the organizer decided to drop before it
+   * opened. Refuses if any of its ticket types has even one real order,
+   * since neither SaleBatch nor TicketType cascades on delete (unlike
+   * Order -> OrderHistory) — this is a deliberate one-way door, not
+   * something a stray click on an active wave should be able to trigger.
+   * Also zeroes the Redis stock counter for each ticket type that has its
+   * OWN (non-shared) stock, so a future ticket type that happened to reuse
+   * the id (cuids make this effectively impossible, but harmless either
+   * way) never inherits a stale count. A pooled ticket type's sharedStockKey
+   * is deliberately left untouched: that key may still be live for a
+   * sibling ticket type outside this batch, and there is no cheap way to
+   * confirm it isn't — an orphaned pool key nobody references anymore is
+   * harmless, but zeroing another wave's real stock out from under it is not.
+   */
+  async deleteBatch(batchId: string) {
+    const batch = await this.prisma.saleBatch.findUnique({
+      where: { id: batchId },
+      include: { ticketTypes: { include: { orders: { select: { id: true } } } } },
+    });
+    if (!batch) throw new NotFoundException(`Batch ${batchId} not found`);
+
+    const soldTicketType = batch.ticketTypes.find((tt) => tt.orders.length > 0);
+    if (soldTicketType) {
+      throw new BadRequestException(
+        `無法刪除：「${soldTicketType.name}」已有訂單，此波次不能刪除`,
+      );
+    }
+
+    for (const tt of batch.ticketTypes) {
+      if (!tt.sharedStockKey) {
+        await this.inventory.takeAllStock(tt.id);
+      }
+    }
+    await this.prisma.$transaction([
+      this.prisma.ticketType.deleteMany({ where: { batchId } }),
+      this.prisma.saleBatch.delete({ where: { id: batchId } }),
+    ]);
+    return { deleted: true };
   }
 
   /**

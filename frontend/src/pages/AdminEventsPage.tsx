@@ -108,15 +108,18 @@ function BatchRow({
   batch,
   onSaved,
   onTicketTypeSaved,
+  onDeleted,
 }: {
   batch: SaleBatch;
   onSaved: (updated: SaleBatch) => void;
   onTicketTypeSaved: (updated: TicketType) => void;
+  onDeleted: (batchId: string) => void;
 }) {
   const { token } = useAdminAuth();
   const [startDraft, setStartDraft] = useState(isoToTaipeiInputValue(batch.saleStartAt));
   const [endDraft, setEndDraft] = useState(isoToTaipeiInputValue(batch.saleEndAt));
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const dirty =
@@ -137,6 +140,26 @@ function BatchRow({
       setError(err instanceof ApiError ? err.message : '儲存失敗');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!token) return;
+    if (
+      !window.confirm(
+        `確定要永久刪除「${batch.name}」嗎？此操作無法復原。若此波次任何票種已有訂單，系統會拒絕刪除。`,
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.adminDeleteBatch(token, batch.id);
+      onDeleted(batch.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '刪除失敗');
+      setDeleting(false);
     }
   }
 
@@ -167,8 +190,15 @@ function BatchRow({
         </div>
       </td>
       <td data-label="操作">
-        <button disabled={!dirty || saving} onClick={handleSave}>
+        <button disabled={!dirty || saving || deleting} onClick={handleSave}>
           {saving ? '儲存中…' : '儲存'}
+        </button>
+        <button
+          className="danger-button"
+          disabled={saving || deleting}
+          onClick={handleDelete}
+        >
+          {deleting ? '刪除中…' : '刪除波次'}
         </button>
         {error && <p className="error hint">{error}</p>}
       </td>
@@ -229,6 +259,19 @@ export function AdminEventsPage() {
     );
   }
 
+  function removeBatchFromState(batchId: string) {
+    setEvents(
+      (prev) =>
+        prev?.map((event) => ({
+          ...event,
+          sessions: event.sessions.map((session) => ({
+            ...session,
+            batches: session.batches.filter((b) => b.id !== batchId),
+          })),
+        })) ?? null,
+    );
+  }
+
   if (error) return <div className="page error">{error}</div>;
   if (!events) return <div className="page">載入中…</div>;
 
@@ -265,6 +308,7 @@ export function AdminEventsPage() {
                       batch={batch}
                       onSaved={(updated) => updateBatchInState(session.id, updated)}
                       onTicketTypeSaved={updateTicketTypeInState}
+                      onDeleted={removeBatchFromState}
                     />
                   ))}
                 </tbody>

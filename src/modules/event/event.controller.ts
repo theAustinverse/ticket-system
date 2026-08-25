@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -60,6 +61,12 @@ export class EventController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   updateBatch(@Param('id') id: string, @Body() dto: UpdateSaleBatchDto) {
     return this.eventService.updateBatch(id, dto);
+  }
+
+  @Delete('batches/:id')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  deleteBatch(@Param('id') id: string) {
+    return this.eventService.deleteBatch(id);
   }
 
   @Post('batches/:batchId/ticket-types')

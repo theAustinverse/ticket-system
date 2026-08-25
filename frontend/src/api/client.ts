@@ -96,6 +96,13 @@ export const api = {
       body: JSON.stringify(dto),
     }),
 
+  /** Refuses (400) if any ticket type in the batch already has a real order. */
+  adminDeleteBatch: (authToken: string, batchId: string) =>
+    request<{ deleted: boolean }>(`/events/batches/${batchId}`, {
+      method: 'DELETE',
+      headers: authHeader(authToken),
+    }),
+
   /**
    * Updates the row only — does not touch Redis stock. Follow with
    * adminResetStock so the sellable count actually reflects the new

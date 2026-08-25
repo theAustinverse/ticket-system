@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EventService } from './event.service';
 
 describe('EventService', () => {
@@ -11,15 +11,19 @@ describe('EventService', () => {
       saleBatch: {
         findUnique: jest.fn(),
         update: jest.fn(),
+        delete: jest.fn(),
       },
       ticketType: {
         findUnique: jest.fn(),
         update: jest.fn(),
+        deleteMany: jest.fn(),
       },
+      $transaction: jest.fn((ops) => Promise.all(ops)),
     };
     inventory = {
       initStock: jest.fn().mockResolvedValue(undefined),
       initStockIfAbsent: jest.fn().mockResolvedValue(undefined),
+      takeAllStock: jest.fn().mockResolvedValue(0),
     };
     service = new EventService(prisma, inventory);
   });
@@ -114,6 +118,61 @@ describe('EventService', () => {
         service.updateBatch('missing', { saleStartAt: '2026-08-15T04:00:00.000Z' }),
       ).rejects.toThrow(NotFoundException);
       expect(prisma.saleBatch.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteBatch', () => {
+    it('deletes an unsold batch and zeroes each independent ticket type in Redis', async () => {
+      prisma.saleBatch.findUnique.mockResolvedValue({
+        id: 'batch-3',
+        ticketTypes: [
+          { id: 'tt-3', name: '最後席次票', sharedStockKey: null, orders: [] },
+        ],
+      });
+
+      const result = await service.deleteBatch('batch-3');
+
+      expect(inventory.takeAllStock).toHaveBeenCalledWith('tt-3');
+      expect(prisma.ticketType.deleteMany).toHaveBeenCalledWith({
+        where: { batchId: 'batch-3' },
+      });
+      expect(prisma.saleBatch.delete).toHaveBeenCalledWith({ where: { id: 'batch-3' } });
+      expect(result).toEqual({ deleted: true });
+    });
+
+    it('refuses to delete a batch whose ticket type already has an order', async () => {
+      prisma.saleBatch.findUnique.mockResolvedValue({
+        id: 'batch-1',
+        ticketTypes: [
+          { id: 'tt-1', name: '團體早鳥票', sharedStockKey: 'early-bird-pool', orders: [{ id: 'order-1' }] },
+        ],
+      });
+
+      await expect(service.deleteBatch('batch-1')).rejects.toThrow(BadRequestException);
+      expect(prisma.ticketType.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.saleBatch.delete).not.toHaveBeenCalled();
+      expect(inventory.takeAllStock).not.toHaveBeenCalled();
+    });
+
+    it('never zeroes Redis for a pooled ticket type — the pool may still be live for a sibling in another batch', async () => {
+      prisma.saleBatch.findUnique.mockResolvedValue({
+        id: 'batch-3',
+        ticketTypes: [
+          { id: 'tt-3', name: '共用池票種', sharedStockKey: 'some-pool', orders: [] },
+        ],
+      });
+
+      await service.deleteBatch('batch-3');
+
+      expect(inventory.takeAllStock).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException for a nonexistent batch and touches nothing', async () => {
+      prisma.saleBatch.findUnique.mockResolvedValue(null);
+
+      await expect(service.deleteBatch('missing')).rejects.toThrow(NotFoundException);
+      expect(prisma.ticketType.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.saleBatch.delete).not.toHaveBeenCalled();
     });
   });
 });
