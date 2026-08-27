@@ -102,6 +102,13 @@ export function RegistrationPage() {
   const [buyingForFamily, setBuyingForFamily] = useState(false);
   const [childSeatCount, setChildSeatCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The registrant fields are filled from the member profile and never typed
+   * here — and in 代訂 mode they aren't even rendered. So "they're empty"
+   * means the profile fetch didn't land, not that the buyer skipped
+   * something, and the two need different messages.
+   */
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -121,6 +128,7 @@ export function RegistrationPage() {
         setRegistrantTeam(profile.team);
         setRegistrantLineId(profile.lineId);
         setRegistrantPhone(profile.phone);
+        setProfileLoaded(true);
       })
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : '載入個人資料失敗，請重新整理再試一次'),
@@ -177,7 +185,14 @@ export function RegistrationPage() {
     const isFamilyPurchase = allowsMultiBuy && buyingForFamily;
 
     if (!registrantName.trim() || !registrantTeam || !registrantLineId.trim() || !registrantPhone.trim()) {
-      setError('請完整填寫報名人基本資料');
+      // Blaming the buyer here is wrong when the profile simply never
+      // arrived — especially in 代訂 mode, where these fields are hidden and
+      // there is no field on screen for them to go fix.
+      setError(
+        profileLoaded
+          ? '請完整填寫報名人基本資料'
+          : '會員資料尚未載入完成，請重新整理頁面後再試一次',
+      );
       return;
     }
     if (!isFamilyPurchase && (!mealChoice || (mealChoice === '其他' && !mealCustom.trim()))) {

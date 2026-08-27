@@ -30,6 +30,11 @@ export function LoginPage() {
   const { setToken } = useAuth();
   const navigate = useNavigate();
 
+  // Set by the API client when an authenticated call came back 401 — the
+  // session lapsed rather than the user choosing to log out, so say why they
+  // landed back here instead of leaving them to guess.
+  const sessionExpired = new URLSearchParams(location.search).get('expired') === '1';
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -93,6 +98,9 @@ export function LoginPage() {
   return (
     <div className="page page-narrow">
       <h1>{mode === 'login' ? '登入' : '註冊'}</h1>
+      {sessionExpired && mode === 'login' && (
+        <p className="error">登入已過期，請重新登入後再繼續。</p>
+      )}
       <form onSubmit={handleSubmit} className="form">
         <label>
           Email

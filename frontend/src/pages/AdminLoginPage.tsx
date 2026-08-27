@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAdminAuth } from '../context/AdminAuthContext';
 
@@ -10,6 +10,11 @@ export function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const { setToken } = useAdminAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // See LoginPage — the API client appends this when an authenticated call
+  // 401s, to distinguish a lapsed session from a deliberate logout.
+  const sessionExpired = new URLSearchParams(location.search).get('expired') === '1';
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,6 +34,7 @@ export function AdminLoginPage() {
   return (
     <div className="page page-narrow">
       <h1>後台管理登入</h1>
+      {sessionExpired && <p className="error">登入已過期，請重新登入後再繼續。</p>}
       <form onSubmit={handleSubmit} className="form">
         <label>
           管理者帳號

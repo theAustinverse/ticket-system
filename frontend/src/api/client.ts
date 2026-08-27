@@ -31,6 +31,56 @@ export class ApiError extends Error {
   }
 }
 
+/** Must match AuthContext / AdminAuthContext — the session this module expires on a 401. */
+const USER_TOKEN_KEY = 'ticket-system-token';
+const ADMIN_TOKEN_KEY = 'admin-token';
+
+/** The Bearer value actually sent, so a 401 can tell which session went stale. */
+function sentBearer(headers: HeadersInit | undefined): string | null {
+  if (!headers) return null;
+  const raw =
+    headers instanceof Headers
+      ? headers.get('Authorization')
+      : Array.isArray(headers)
+        ? (headers.find(([k]) => k.toLowerCase() === 'authorization')?.[1] ?? null)
+        : ((headers as Record<string, string>).Authorization ?? null);
+  return raw ? raw.replace(/^Bearer\s+/i, '') : null;
+}
+
+/**
+ * A JWT lasts JWT_EXPIRES_IN and nothing on the client watches the clock, so
+ * a session can go stale while someone sits on a page waiting for a wave to
+ * open — and every later call then 401s while the UI still looks logged in.
+ * Previously that surfaced as a raw English "Unauthorized", or worse: on the
+ * registration form's 代訂 mode the registrant fields are hidden and filled
+ * from the profile, so a 401'd profile fetch left them empty and the form
+ * complained about fields the buyer could neither see nor fill.
+ *
+ * On a 401 for an authenticated call, drop the stale token and send them to
+ * the matching login screen with ?expired=1 so the page can say so in
+ * Chinese. Full page load, deliberately — it clears every bit of state that
+ * was built on the dead session.
+ */
+function handleUnauthorized(path: string, options: RequestInit) {
+  // /auth/* answers 401 for *bad credentials* too (login, admin-login). A
+  // mistyped password is a message to show inline, not a stale session —
+  // bouncing there would trap someone in a redirect loop on the login page.
+  if (path.startsWith('/auth/')) return;
+
+  const sent = sentBearer(options.headers);
+  if (!sent) return; // Unauthenticated call; there's no session to expire.
+
+  if (sent === localStorage.getItem(ADMIN_TOKEN_KEY)) {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    window.location.assign('/admin/login?expired=1');
+    return;
+  }
+  if (sent === localStorage.getItem(USER_TOKEN_KEY)) {
+    localStorage.removeItem(USER_TOKEN_KEY);
+    window.location.assign('/login?expired=1');
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
@@ -42,6 +92,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => null);
+    if (res.status === 401) handleUnauthorized(path, options);
     throw new ApiError(body?.message ?? res.statusText, res.status);
   }
   if (res.status === 204) return undefined as T;
