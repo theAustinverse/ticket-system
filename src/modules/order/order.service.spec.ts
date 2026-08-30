@@ -634,6 +634,88 @@ describe('OrderService', () => {
     });
   });
 
+  describe('listMyOrders', () => {
+    it('flags each order with isFirstWave, computed the same way createTransfer enforces it', async () => {
+      prisma.order.findMany = jest.fn().mockResolvedValue([
+        {
+          id: 'order-1',
+          ticketType: { sessionId: 'session-1', batchId: 'batch-1' },
+          transfers: [],
+        },
+        {
+          id: 'order-2',
+          ticketType: { sessionId: 'session-1', batchId: 'batch-2' },
+          transfers: [],
+        },
+      ]);
+      prisma.saleBatch = {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ id: 'batch-1' }, { id: 'batch-2' }]),
+      };
+
+      const result = await service.listMyOrders('user-1');
+
+      expect(result.find((o: any) => o.id === 'order-1')?.isFirstWave).toBe(true);
+      expect(result.find((o: any) => o.id === 'order-2')?.isFirstWave).toBe(false);
+    });
+  });
+
+  describe('createTransfer', () => {
+    function makeOrder(batchId: string) {
+      return {
+        id: 'order-1',
+        userId: 'user-1',
+        status: 'PAID',
+        ticketType: { sessionId: 'session-1', batchId, batch: {} },
+      };
+    }
+
+    beforeEach(() => {
+      prisma.order.findUnique = jest.fn();
+      prisma.saleBatch = { findMany: jest.fn() };
+      prisma.ticketTransfer = {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'transfer-1' }),
+      };
+      prisma.user.findUnique = jest.fn().mockImplementation(({ where }) =>
+        Promise.resolve(
+          where.id === 'user-1'
+            ? { id: 'user-1', email: 'user@gmail.com' }
+            : { id: 'user-2', email: 'friend@gmail.com' },
+        ),
+      );
+    });
+
+    it('rejects a transfer request for a 第一波 (earliest) batch order', async () => {
+      prisma.order.findUnique.mockResolvedValue(makeOrder('batch-1'));
+      // batch-1 created first -> it's the earliest, i.e. 第一波.
+      prisma.saleBatch.findMany.mockResolvedValue([
+        { id: 'batch-1' },
+        { id: 'batch-2' },
+      ]);
+
+      await expect(
+        service.createTransfer('user-1', 'order-1', 'friend@gmail.com'),
+      ).rejects.toThrow('第一波票券已停止轉讓功能');
+      expect(prisma.ticketTransfer.create).not.toHaveBeenCalled();
+    });
+
+    it('allows a transfer request for a later-wave batch order', async () => {
+      prisma.order.findUnique.mockResolvedValue(makeOrder('batch-2'));
+      prisma.saleBatch.findMany.mockResolvedValue([
+        { id: 'batch-1' },
+        { id: 'batch-2' },
+      ]);
+
+      await service.createTransfer('user-1', 'order-1', 'friend@gmail.com');
+
+      expect(prisma.ticketTransfer.create).toHaveBeenCalledWith({
+        data: { orderId: 'order-1', fromUserId: 'user-1', toUserId: 'user-2' },
+      });
+    });
+  });
+
   describe('acceptTransfer', () => {
     it("emails the admin team with the recipient's reviewed/edited notice details once accepted", async () => {
       prisma.ticketTransfer = {

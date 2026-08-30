@@ -836,7 +836,13 @@ export function MyTicketsPage() {
                 </p>
               )
             )}
-            {order.status === 'PAID' && (
+            {/* 第一波 orders can't start a new transfer (createTransfer rejects it
+                server-side) — hide the button entirely rather than let someone
+                click through to a rejection. A transfer already PENDING before
+                this policy took effect is untouched: it still shows and can
+                still be cancelled. */}
+            {order.status === 'PAID' &&
+              (order.transfers.length > 0 || !order.isFirstWave) && (
               <div className="ticket-transfer-block">
                 {order.transfers.length > 0 ? (
                   <>

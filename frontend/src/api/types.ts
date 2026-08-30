@@ -153,6 +153,8 @@ export interface OrderWithSession extends Order {
   ticketType: TicketType & { session: EventSession };
   /** Only ever contains PENDING transfers (see api.listMyOrders). */
   transfers: (TicketTransfer & { toUser: { email: string } })[];
+  /** True for a 第一波 (earliest-created batch) order — createTransfer rejects new transfers for these. */
+  isFirstWave: boolean;
 }
 
 export interface IncomingTransfer extends TicketTransfer {

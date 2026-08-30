@@ -518,8 +518,14 @@ export class OrderService {
     return updated;
   }
 
-  listMyOrders(userId: string) {
-    return this.prisma.order.findMany({
+  /**
+   * `isFirstWave` lets the frontend hide the "轉讓票券" button for 第一波
+   * orders without needing to see sibling batches itself — it reuses
+   * isFirstWaveBatch so the UI's notion of "first wave" can never drift
+   * from the one createTransfer actually enforces.
+   */
+  async listMyOrders(userId: string) {
+    const orders = await this.prisma.order.findMany({
       where: { userId },
       include: {
         ticketType: { include: { session: true, batch: true } },
@@ -530,6 +536,32 @@ export class OrderService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return Promise.all(
+      orders.map(async (order) => ({
+        ...order,
+        isFirstWave: await this.isFirstWaveBatch(
+          order.ticketType.sessionId,
+          order.ticketType.batchId,
+        ),
+      })),
+    );
+  }
+
+  /**
+   * True if `batchId` is the earliest-created batch (by createdAt, id as
+   * tiebreaker) among its session's SaleBatch rows — the same "wave order"
+   * convention StockSweepService already uses to infer wave numbers, since
+   * SaleBatch has no explicit wave-number field, only a freely-editable
+   * `name`. Matching on creation order rather than the string "第一波"
+   * keeps this working even if a batch gets renamed later.
+   */
+  private async isFirstWaveBatch(sessionId: string, batchId: string): Promise<boolean> {
+    const siblingBatches = await this.prisma.saleBatch.findMany({
+      where: { sessionId },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true },
+    });
+    return siblingBatches[0]?.id === batchId;
   }
 
   /**
@@ -539,6 +571,11 @@ export class OrderService {
    * the clock regardless of the ticket's own batch close time — unlike
    * cancellation/member-list edits, a transfer doesn't touch stock, so
    * there's no sweep-related reason to cut it off at batch close.
+   *
+   * Exception: 第一波 (early-bird) orders can never start a new transfer —
+   * a deliberate policy call, not a stock-safety one. This only blocks
+   * *new* transfer requests; a transfer already PENDING before this policy
+   * took effect still runs its course (accept/reject/cancel untouched).
    */
   async createTransfer(userId: string, orderId: string, toEmail: string) {
     const order = await this.prisma.order.findUnique({
@@ -551,6 +588,11 @@ export class OrderService {
     }
     if (order.status !== 'PAID') {
       throw new BadRequestException(`Order ${orderId} cannot be transferred`);
+    }
+    if (
+      await this.isFirstWaveBatch(order.ticketType.sessionId, order.ticketType.batchId)
+    ) {
+      throw new BadRequestException('第一波票券已停止轉讓功能');
     }
 
     const existingPending = await this.prisma.ticketTransfer.findFirst({
