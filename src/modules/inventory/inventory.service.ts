@@ -28,29 +28,65 @@ const GROUP_CLAIM_KEY_PREFIX = 'groupclaim:';
 
 @Injectable()
 export class InventoryService implements OnModuleInit {
+  private decrementScript: string;
   private decrementScriptSha: string;
+  private decrementGroupScript: string;
   private decrementGroupScriptSha: string;
 
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
 
   async onModuleInit() {
-    const script = readFileSync(
+    this.decrementScript = readFileSync(
       join(__dirname, 'lua', 'decrement-stock.lua'),
       'utf-8',
     );
     this.decrementScriptSha = (await this.redis.script(
       'LOAD',
-      script,
+      this.decrementScript,
     )) as string;
 
-    const groupScript = readFileSync(
+    this.decrementGroupScript = readFileSync(
       join(__dirname, 'lua', 'decrement-group-stock.lua'),
       'utf-8',
     );
     this.decrementGroupScriptSha = (await this.redis.script(
       'LOAD',
-      groupScript,
+      this.decrementGroupScript,
     )) as string;
+  }
+
+  /**
+   * EVALSHA against a script cached at boot. Redis's script cache is pure
+   * in-memory state, not persisted — a Redis restart/redeploy independent
+   * of this container (which just happened in production: Redis restarted
+   * mid-session while the api container kept running) empties it, and every
+   * subsequent EVALSHA using the SHA cached from the old boot fails with
+   * "NOSCRIPT No matching script" — an uncaught ReplyError that surfaced as
+   * a 500 on every rate-limited or stock-decrementing request until the api
+   * container itself happened to redeploy. On that specific error, reload
+   * the script and retry exactly once rather than propagating it; any other
+   * error (bad args, connection down, genuine stock rules) still throws.
+   */
+  private async evalshaWithReload(
+    scriptSource: string,
+    sha: string,
+    onReload: (newSha: string) => void,
+    numKeys: number,
+    ...args: (string | number)[]
+  ): Promise<unknown> {
+    try {
+      return await this.redis.evalsha(sha, numKeys, ...args);
+    } catch (err) {
+      if (!(err instanceof Error) || !err.message.startsWith('NOSCRIPT')) {
+        throw err;
+      }
+      const freshSha = (await this.redis.script(
+        'LOAD',
+        scriptSource,
+      )) as string;
+      onReload(freshSha);
+      return this.redis.evalsha(freshSha, numKeys, ...args);
+    }
   }
 
   /** `key` is a ticketTypeId for an independent ticket type, or a sharedStockKey for a pooled one. */
@@ -98,8 +134,10 @@ export class InventoryService implements OnModuleInit {
    * Throws if stock is uninitialized or insufficient.
    */
   async decrementStock(key: string, quantity: number): Promise<number> {
-    const result = await this.redis.evalsha(
+    const result = await this.evalshaWithReload(
+      this.decrementScript,
       this.decrementScriptSha,
+      (sha) => (this.decrementScriptSha = sha),
       1,
       this.stockKey(key),
       quantity,
@@ -132,8 +170,10 @@ export class InventoryService implements OnModuleInit {
     quantity: number,
     maxGroupOrders: number,
   ): Promise<number> {
-    const result = await this.redis.evalsha(
+    const result = await this.evalshaWithReload(
+      this.decrementGroupScript,
       this.decrementGroupScriptSha,
+      (sha) => (this.decrementGroupScriptSha = sha),
       2,
       this.stockKey(stockPoolKey),
       this.groupCountKey(ticketTypeId),

@@ -24,6 +24,7 @@ const DEFAULT_WINDOW_SECONDS = 10;
  */
 @Injectable()
 export class RateLimitGuard implements CanActivate, OnModuleInit {
+  private script: string;
   private scriptSha: string;
 
   constructor(
@@ -32,8 +33,36 @@ export class RateLimitGuard implements CanActivate, OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const script = readFileSync(join(__dirname, 'rate-limit.lua'), 'utf-8');
-    this.scriptSha = (await this.redis.script('LOAD', script)) as string;
+    this.script = readFileSync(join(__dirname, 'rate-limit.lua'), 'utf-8');
+    this.scriptSha = (await this.redis.script('LOAD', this.script)) as string;
+  }
+
+  /**
+   * Redis's script cache is pure in-memory state, not persisted — a Redis
+   * restart/redeploy independent of this container empties it, and every
+   * subsequent EVALSHA using the SHA cached at boot fails with "NOSCRIPT
+   * No matching script": an uncaught ReplyError that surfaces as a 500 on
+   * every rate-limited route (this is exactly what took down admin login —
+   * Redis restarted mid-session while the api container kept running, and
+   * kept failing until the container itself happened to redeploy). On that
+   * specific error, reload the script and retry once instead of throwing.
+   */
+  private async evalshaWithReload(
+    numKeys: number,
+    ...args: (string | number)[]
+  ): Promise<unknown> {
+    try {
+      return await this.redis.evalsha(this.scriptSha, numKeys, ...args);
+    } catch (err) {
+      if (!(err instanceof Error) || !err.message.startsWith('NOSCRIPT')) {
+        throw err;
+      }
+      this.scriptSha = (await this.redis.script(
+        'LOAD',
+        this.script,
+      )) as string;
+      return this.redis.evalsha(this.scriptSha, numKeys, ...args);
+    }
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -56,8 +85,7 @@ export class RateLimitGuard implements CanActivate, OnModuleInit {
     const route = `${request.method}:${request.route?.path ?? request.url}`;
     const key = `ratelimit:${ip}:${userId}:${route}`;
 
-    const count = (await this.redis.evalsha(
-      this.scriptSha,
+    const count = (await this.evalshaWithReload(
       1,
       key,
       options.windowSeconds,
