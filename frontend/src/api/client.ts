@@ -166,6 +166,7 @@ export const api = {
     authToken: string,
     ticketTypeId: string,
     dto: {
+      name?: string;
       totalQuantity?: number;
       maxQuantityPerOrder?: number;
       sharedStockKey?: string;

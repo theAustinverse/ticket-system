@@ -6,6 +6,12 @@ import { IsBoolean, IsInt, IsOptional, IsString, Min, MinLength } from 'class-va
  * shared pool, or turning on multi-quantity purchase for a later wave).
  */
 export class UpdateTicketTypeDto {
+  /** Corrects the display name after creation (e.g. a mojibake'd name from a bad client encoding). */
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  name?: string;
+
   /**
    * The ticket type's own capacity. On a pooled ticket type (sharedStockKey
    * set) this is display/record-keeping only — the real ceiling is the
