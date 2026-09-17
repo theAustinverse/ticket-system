@@ -83,7 +83,8 @@ export function OrderPage() {
       <p>
         <strong>{ticketType.name}</strong>
         {ticketType.batch && ` · ${ticketType.batch.name}`} · NT$
-        {ticketType.price.toLocaleString()} / 張
+        {ticketType.groupBundleTotalAmount == null &&
+          `${ticketType.price.toLocaleString()} / 張`}
       </p>
       {ticketType.fixedQuantity ? (
         <p className="hint">
@@ -94,7 +95,14 @@ export function OrderPage() {
       ) : (
         <p className="hint">本次購買 1 張</p>
       )}
-      <p>總金額：NT$ {(ticketType.price * quantity).toLocaleString()}</p>
+      {/* A fixedQuantity bundle can charge a flat total that doesn't equal
+          price * quantity (see TicketType.groupBundleTotalAmount) — must
+          match order.service.ts's totalAmount calculation exactly, since
+          this is the number the buyer is confirming before paying. */}
+      <p>
+        總金額：NT${' '}
+        {(ticketType.groupBundleTotalAmount ?? ticketType.price * quantity).toLocaleString()}
+      </p>
 
       <h2>報名資料</h2>
       <p>

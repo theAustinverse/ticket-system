@@ -142,7 +142,17 @@ function TicketTypeRow({
     <div className="ticket-type-row">
       <div className="ticket-type-info">
         <strong>{ticketType.name}</strong>
-        <span className="price">NT$ {ticketType.price.toLocaleString()}</span>
+        {/* A fixedQuantity bundle can charge a flat total that doesn't equal
+            price * quantity (see TicketType.groupBundleTotalAmount) — showing
+            the raw per-seat `price` here would misquote what the buyer is
+            actually about to be charged. */}
+        <span className="price">
+          NT${' '}
+          {(ticketType.groupBundleTotalAmount ?? ticketType.price).toLocaleString()}
+          {ticketType.groupBundleTotalAmount != null &&
+            ticketType.fixedQuantity != null &&
+            `（${ticketType.fixedQuantity} 張套票）`}
+        </span>
         {ticketType.fixedQuantity && (
           <span className="badge">每次限購 {ticketType.fixedQuantity} 張</span>
         )}

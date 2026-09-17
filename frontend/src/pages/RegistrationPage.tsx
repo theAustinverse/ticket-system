@@ -292,7 +292,7 @@ export function RegistrationPage() {
         {ticketType.name}
         {ticketType.batch && ` · ${ticketType.batch.name}`}
         {' · NT$ '}
-        {ticketType.price.toLocaleString()}
+        {(ticketType.groupBundleTotalAmount ?? ticketType.price).toLocaleString()}
       </p>
       <form onSubmit={handleSubmit} className="form">
         {allowsMultiBuy && (
