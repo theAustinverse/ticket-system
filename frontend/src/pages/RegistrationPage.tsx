@@ -370,7 +370,11 @@ export function RegistrationPage() {
         {isGroup && (
           <>
             <h2>團體票資料</h2>
-            <p className="hint">限「首席」購買，每位首席僅限購 1 組。</p>
+            <p className="hint">
+              {ticketType.maxGroupOrders != null
+                ? '限「首席」購買，每位首席僅限購 1 組。'
+                : '歡迎大家搶購，不限組數。'}
+            </p>
             <p className="hint">主揪者資訊即為上方填寫的個人資料，無需重複填寫</p>
 
             <h3>其餘團體成員名單（共 {members.length} 位）</h3>
