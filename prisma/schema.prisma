@@ -127,6 +127,13 @@ model TicketType {
   /// speed bump, not an authorization boundary — orders still record who
   /// bought what for admin review.
   requiresPasscode Boolean @default(false)
+  /// Only meaningful on a fixedQuantity bundle: the exact total price the
+  /// whole bundle charges, overriding the normal price * quantity math —
+  /// e.g. an 11-ticket "buy 10 get 1 free" bundle priced at a flat 23,880
+  /// rather than 11 * some per-seat price, which can't land on 23,880
+  /// exactly since 23880 isn't divisible by 11. Null means fall back to
+  /// price * quantity as usual; every other ticket type is unaffected.
+  groupBundleTotalAmount Int?
   createdAt     DateTime   @default(now())
   orders        Order[]
 

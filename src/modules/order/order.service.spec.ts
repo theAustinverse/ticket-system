@@ -123,6 +123,25 @@ describe('OrderService', () => {
     );
   });
 
+  it('charges groupBundleTotalAmount instead of price * quantity when set', async () => {
+    // 11 * 2000 would be 22000 — this ticket type overrides it to a flat
+    // 23880 (an amount 23880/11 can't land on via any integer per-seat price).
+    eventService.findTicketType.mockResolvedValue({
+      ...groupTicketType,
+      groupBundleTotalAmount: 23880,
+    });
+    inventory.decrementStock.mockResolvedValue(0);
+    prisma.order.create.mockResolvedValue({ id: 'order-1' });
+
+    await service.createOrder('user-1', validGroupOrderDto);
+
+    expect(prisma.order.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ totalAmount: 23880, quantity: 11 }),
+      }),
+    );
+  });
+
   it('records a CREATED history entry on successful order creation', async () => {
     inventory.decrementStock.mockResolvedValue(0);
     const createdOrder = {

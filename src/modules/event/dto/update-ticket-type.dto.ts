@@ -40,4 +40,10 @@ export class UpdateTicketTypeDto {
   @IsOptional()
   @IsBoolean()
   requiresPasscode?: boolean;
+
+  /** See TicketType.groupBundleTotalAmount — only meaningful on a fixedQuantity bundle. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  groupBundleTotalAmount?: number;
 }

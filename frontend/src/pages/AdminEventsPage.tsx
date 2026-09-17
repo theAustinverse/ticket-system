@@ -49,6 +49,128 @@ function formatTaipeiDisplay(iso: string | null): string {
  * real PAID orders rather than overwriting blindly, so it's always safe to
  * call — including when it touches ticket types this admin isn't editing.
  */
+/**
+ * sharedStockKey / poolTotalQuantity / maxGroupOrders / groupBundleTotalAmount
+ * / requiresPasscode all live here rather than on the quantity row above,
+ * since editing them is rare and higher-stakes (e.g. migrating an
+ * already-selling independent ticket type onto a shared pool with a
+ * sibling) — collapsed by default so it doesn't clutter the common case.
+ */
+function TicketTypeAdvancedEditor({
+  ticketType,
+  onSaved,
+}: {
+  ticketType: TicketType;
+  onSaved: (updated: TicketType) => void;
+}) {
+  const { token } = useAdminAuth();
+  const [open, setOpen] = useState(false);
+  const [sharedStockKey, setSharedStockKey] = useState(ticketType.sharedStockKey ?? '');
+  const [poolTotalQuantity, setPoolTotalQuantity] = useState(
+    ticketType.poolTotalQuantity != null ? String(ticketType.poolTotalQuantity) : '',
+  );
+  const [maxGroupOrders, setMaxGroupOrders] = useState(
+    ticketType.maxGroupOrders != null ? String(ticketType.maxGroupOrders) : '',
+  );
+  const [groupBundleTotalAmount, setGroupBundleTotalAmount] = useState(
+    ticketType.groupBundleTotalAmount != null
+      ? String(ticketType.groupBundleTotalAmount)
+      : '',
+  );
+  const [requiresPasscode, setRequiresPasscode] = useState(ticketType.requiresPasscode);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    if (!token) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const dto: Parameters<typeof api.adminUpdateTicketType>[2] = {
+        requiresPasscode,
+      };
+      if (sharedStockKey.trim()) dto.sharedStockKey = sharedStockKey.trim();
+      if (poolTotalQuantity.trim()) dto.poolTotalQuantity = Number(poolTotalQuantity);
+      if (maxGroupOrders.trim()) dto.maxGroupOrders = Number(maxGroupOrders);
+      if (groupBundleTotalAmount.trim())
+        dto.groupBundleTotalAmount = Number(groupBundleTotalAmount);
+
+      const updated = await api.adminUpdateTicketType(token, ticketType.id, dto);
+      await api.adminResetStock(token);
+      onSaved({ ...ticketType, ...updated });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '儲存失敗');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button type="button" className="link-button" onClick={() => setOpen(true)}>
+        進階設定 ▾
+      </button>
+    );
+  }
+
+  return (
+    <div className="admin-tickettype-advanced">
+      <label>
+        共用票池 key（留空＝獨立庫存）
+        <input
+          value={sharedStockKey}
+          onChange={(e) => setSharedStockKey(e.target.value)}
+          placeholder="例如 wave2-pool"
+        />
+      </label>
+      <label>
+        票池總量（與共用此 key 的其他票種必須一致）
+        <input
+          type="number"
+          min={0}
+          value={poolTotalQuantity}
+          onChange={(e) => setPoolTotalQuantity(e.target.value)}
+        />
+      </label>
+      <label>
+        團體訂單組數上限（留空＝不限組數）
+        <input
+          type="number"
+          min={0}
+          value={maxGroupOrders}
+          onChange={(e) => setMaxGroupOrders(e.target.value)}
+        />
+      </label>
+      <label>
+        套票固定總價（留空＝用單價×張數計算）
+        <input
+          type="number"
+          min={0}
+          value={groupBundleTotalAmount}
+          onChange={(e) => setGroupBundleTotalAmount(e.target.value)}
+        />
+      </label>
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          checked={requiresPasscode}
+          onChange={(e) => setRequiresPasscode(e.target.checked)}
+        />
+        需要通關密碼才能排隊
+      </label>
+      <div className="button-row">
+        <button disabled={saving} onClick={handleSave}>
+          {saving ? '儲存中…' : '儲存進階設定'}
+        </button>
+        <button type="button" className="link-button" onClick={() => setOpen(false)}>
+          收合
+        </button>
+      </div>
+      {error && <p className="error hint">{error}</p>}
+    </div>
+  );
+}
+
 function TicketTypeQuantityEditor({
   ticketType,
   onSaved,
@@ -100,6 +222,198 @@ function TicketTypeQuantityEditor({
         <span className="hint">剩餘：{ticketType.remainingStock}</span>
       )}
       {error && <p className="error hint">{error}</p>}
+      <TicketTypeAdvancedEditor ticketType={ticketType} onSaved={onSaved} />
+    </div>
+  );
+}
+
+/**
+ * Appends a brand-new ticket type to an existing batch — e.g. adding a group
+ * bundle that shares a pool with a batch's existing individual ticket type.
+ * Joining an existing pool is safe regardless of ordering: createTicketType
+ * only SETNX-initializes the pool if nothing has, and the adminResetStock
+ * call right after always recomputes the pool from real PAID orders across
+ * every ticket type sharing the key, so it self-corrects either way.
+ */
+function CreateTicketTypeForm({
+  batchId,
+  onCreated,
+}: {
+  batchId: string;
+  onCreated: (created: TicketType) => void;
+}) {
+  const { token } = useAdminAuth();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [price, setPrice] = useState('');
+  const [totalQuantity, setTotalQuantity] = useState('');
+  const [fixedQuantity, setFixedQuantity] = useState('');
+  const [maxQuantityPerOrder, setMaxQuantityPerOrder] = useState('');
+  const [sharedStockKey, setSharedStockKey] = useState('');
+  const [poolTotalQuantity, setPoolTotalQuantity] = useState('');
+  const [maxGroupOrders, setMaxGroupOrders] = useState('');
+  const [groupBundleTotalAmount, setGroupBundleTotalAmount] = useState('');
+  const [requiresPasscode, setRequiresPasscode] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const valid =
+    name.trim() !== '' &&
+    price.trim() !== '' &&
+    Number.isInteger(Number(price)) &&
+    totalQuantity.trim() !== '' &&
+    Number.isInteger(Number(totalQuantity)) &&
+    Number(totalQuantity) >= 1;
+
+  function reset() {
+    setName('');
+    setPrice('');
+    setTotalQuantity('');
+    setFixedQuantity('');
+    setMaxQuantityPerOrder('');
+    setSharedStockKey('');
+    setPoolTotalQuantity('');
+    setMaxGroupOrders('');
+    setGroupBundleTotalAmount('');
+    setRequiresPasscode(false);
+  }
+
+  async function handleCreate() {
+    if (!token || !valid) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const dto: Parameters<typeof api.adminCreateTicketType>[2] = {
+        name: name.trim(),
+        price: Number(price),
+        totalQuantity: Number(totalQuantity),
+        requiresPasscode,
+      };
+      if (fixedQuantity.trim()) dto.fixedQuantity = Number(fixedQuantity);
+      if (maxQuantityPerOrder.trim())
+        dto.maxQuantityPerOrder = Number(maxQuantityPerOrder);
+      if (sharedStockKey.trim()) dto.sharedStockKey = sharedStockKey.trim();
+      if (poolTotalQuantity.trim()) dto.poolTotalQuantity = Number(poolTotalQuantity);
+      if (maxGroupOrders.trim()) dto.maxGroupOrders = Number(maxGroupOrders);
+      if (groupBundleTotalAmount.trim())
+        dto.groupBundleTotalAmount = Number(groupBundleTotalAmount);
+
+      const created = await api.adminCreateTicketType(token, batchId, dto);
+      await api.adminResetStock(token);
+      onCreated(created);
+      reset();
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '新增失敗');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button type="button" className="link-button" onClick={() => setOpen(true)}>
+        ＋ 新增票種
+      </button>
+    );
+  }
+
+  return (
+    <div className="admin-tickettype-create">
+      <label>
+        名稱
+        <input value={name} onChange={(e) => setName(e.target.value)} />
+      </label>
+      <label>
+        單價
+        <input type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} />
+      </label>
+      <label>
+        總量
+        <input
+          type="number"
+          min={1}
+          value={totalQuantity}
+          onChange={(e) => setTotalQuantity(e.target.value)}
+        />
+      </label>
+      <label>
+        固定張數（團體套票用，留空＝一般個人票）
+        <input
+          type="number"
+          min={1}
+          value={fixedQuantity}
+          onChange={(e) => setFixedQuantity(e.target.value)}
+        />
+      </label>
+      <label>
+        每人單次限購張數（個人票用，留空＝1 張）
+        <input
+          type="number"
+          min={1}
+          value={maxQuantityPerOrder}
+          onChange={(e) => setMaxQuantityPerOrder(e.target.value)}
+        />
+      </label>
+      <label>
+        共用票池 key（留空＝獨立庫存）
+        <input
+          value={sharedStockKey}
+          onChange={(e) => setSharedStockKey(e.target.value)}
+          placeholder="要跟哪個票種共用庫存，輸入相同的 key"
+        />
+      </label>
+      <label>
+        票池總量（與共用此 key 的其他票種必須一致）
+        <input
+          type="number"
+          min={0}
+          value={poolTotalQuantity}
+          onChange={(e) => setPoolTotalQuantity(e.target.value)}
+        />
+      </label>
+      <label>
+        團體訂單組數上限（留空＝不限組數）
+        <input
+          type="number"
+          min={0}
+          value={maxGroupOrders}
+          onChange={(e) => setMaxGroupOrders(e.target.value)}
+        />
+      </label>
+      <label>
+        套票固定總價（留空＝用單價×張數計算）
+        <input
+          type="number"
+          min={0}
+          value={groupBundleTotalAmount}
+          onChange={(e) => setGroupBundleTotalAmount(e.target.value)}
+        />
+      </label>
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          checked={requiresPasscode}
+          onChange={(e) => setRequiresPasscode(e.target.checked)}
+        />
+        需要通關密碼才能排隊
+      </label>
+      <div className="button-row">
+        <button disabled={!valid || saving} onClick={handleCreate}>
+          {saving ? '新增中…' : '建立票種'}
+        </button>
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => {
+            reset();
+            setOpen(false);
+          }}
+        >
+          取消
+        </button>
+      </div>
+      {error && <p className="error hint">{error}</p>}
     </div>
   );
 }
@@ -108,11 +422,13 @@ function BatchRow({
   batch,
   onSaved,
   onTicketTypeSaved,
+  onTicketTypeCreated,
   onDeleted,
 }: {
   batch: SaleBatch;
   onSaved: (updated: SaleBatch) => void;
   onTicketTypeSaved: (updated: TicketType) => void;
+  onTicketTypeCreated: (created: TicketType) => void;
   onDeleted: (batchId: string) => void;
 }) {
   const { token } = useAdminAuth();
@@ -187,6 +503,7 @@ function BatchRow({
           {batch.ticketTypes.map((tt) => (
             <TicketTypeQuantityEditor key={tt.id} ticketType={tt} onSaved={onTicketTypeSaved} />
           ))}
+          <CreateTicketTypeForm batchId={batch.id} onCreated={onTicketTypeCreated} />
         </div>
       </td>
       <td data-label="操作">
@@ -272,6 +589,23 @@ export function AdminEventsPage() {
     );
   }
 
+  function addTicketTypeToState(batchId: string, created: TicketType) {
+    setEvents(
+      (prev) =>
+        prev?.map((event) => ({
+          ...event,
+          sessions: event.sessions.map((session) => ({
+            ...session,
+            batches: session.batches.map((batch) =>
+              batch.id !== batchId
+                ? batch
+                : { ...batch, ticketTypes: [...batch.ticketTypes, created] },
+            ),
+          })),
+        })) ?? null,
+    );
+  }
+
   if (error) return <div className="page error">{error}</div>;
   if (!events) return <div className="page">載入中…</div>;
 
@@ -308,6 +642,7 @@ export function AdminEventsPage() {
                       batch={batch}
                       onSaved={(updated) => updateBatchInState(session.id, updated)}
                       onTicketTypeSaved={updateTicketTypeInState}
+                      onTicketTypeCreated={(created) => addTicketTypeToState(batch.id, created)}
                       onDeleted={removeBatchFromState}
                     />
                   ))}

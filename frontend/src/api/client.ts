@@ -157,16 +157,54 @@ export const api = {
   /**
    * Updates the row only — does not touch Redis stock. Follow with
    * adminResetStock so the sellable count actually reflects the new
-   * totalQuantity (it derives the new count from real PAID orders rather
-   * than overwriting blindly, so it's always safe to call).
+   * totalQuantity / poolTotalQuantity (it derives the new count from real
+   * PAID orders rather than overwriting blindly, so it's always safe to
+   * call). Also how an existing independent ticket type gets migrated onto
+   * a shared pool: set sharedStockKey + poolTotalQuantity here, then reset.
    */
   adminUpdateTicketType: (
     authToken: string,
     ticketTypeId: string,
-    dto: { totalQuantity?: number },
+    dto: {
+      totalQuantity?: number;
+      maxQuantityPerOrder?: number;
+      sharedStockKey?: string;
+      poolTotalQuantity?: number;
+      maxGroupOrders?: number;
+      requiresPasscode?: boolean;
+      groupBundleTotalAmount?: number;
+    },
   ) =>
     request<TicketType>(`/events/ticket-types/${ticketTypeId}`, {
       method: 'PATCH',
+      headers: authHeader(authToken),
+      body: JSON.stringify(dto),
+    }),
+
+  /**
+   * Seeds Redis stock as part of creation — for a ticket type joining an
+   * existing shared pool (sharedStockKey already used elsewhere), this is a
+   * no-op if the pool is already initialized, so it never stomps whatever
+   * the pool's other ticket type has already sold.
+   */
+  adminCreateTicketType: (
+    authToken: string,
+    batchId: string,
+    dto: {
+      name: string;
+      price: number;
+      totalQuantity: number;
+      fixedQuantity?: number;
+      maxQuantityPerOrder?: number;
+      sharedStockKey?: string;
+      poolTotalQuantity?: number;
+      maxGroupOrders?: number;
+      requiresPasscode?: boolean;
+      groupBundleTotalAmount?: number;
+    },
+  ) =>
+    request<TicketType>(`/events/batches/${batchId}/ticket-types`, {
+      method: 'POST',
       headers: authHeader(authToken),
       body: JSON.stringify(dto),
     }),

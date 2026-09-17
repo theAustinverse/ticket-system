@@ -48,4 +48,15 @@ export class CreateTicketTypeDto {
   @IsOptional()
   @IsBoolean()
   requiresPasscode?: boolean;
+
+  /**
+   * Only meaningful alongside fixedQuantity: charges exactly this amount for
+   * the whole bundle instead of price * quantity — e.g. an 11-ticket bundle
+   * priced at a flat 23,880 rather than 11 * some per-seat price that can't
+   * land on 23,880 exactly.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  groupBundleTotalAmount?: number;
 }

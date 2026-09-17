@@ -218,7 +218,11 @@ export class OrderService {
         throw error;
       }
 
-      const totalAmount = ticketType.price * dto.quantity;
+      // A fixedQuantity bundle can charge an exact flat total instead of
+      // price * quantity — e.g. an 11-ticket "10 free 1" bundle at 23,880,
+      // which 11 * some per-seat integer price can never land on exactly.
+      const totalAmount =
+        ticketType.groupBundleTotalAmount ?? ticketType.price * dto.quantity;
 
       let order;
       try {

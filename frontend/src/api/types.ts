@@ -40,6 +40,8 @@ export interface TicketType {
   poolTotalQuantity: number | null;
   /** Only meaningful on a shared-pool group ticket type — cap on how many bundles can be sold from the pool. */
   maxGroupOrders: number | null;
+  /** Only meaningful on a fixedQuantity bundle — flat total charged instead of price * quantity. */
+  groupBundleTotalAmount: number | null;
   /** Only populated on the event-detail response; null if stock isn't initialized. */
   remainingStock?: number | null;
   /** Populated on api.getTicketType and on orders (api.listMyOrders); not on the event-detail response (batch is the parent there instead). */
