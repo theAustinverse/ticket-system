@@ -72,6 +72,10 @@ model SaleBatch {
   /// (unsold individual stock + group orders' still-blank member seats) into
   /// the next batch at that batch's price. Null means "no fixed close date".
   saleEndAt   DateTime?
+  /// After this moment no NEW ticket transfer can be started for this batch's
+  /// orders (transfers already PENDING can still be accepted/rejected/cancelled).
+  /// Independent of saleEndAt. Null means "no transfer cutoff".
+  transferEndAt DateTime?
   /// Wave order within a session is inferred from this (earliest = wave 1).
   createdAt   DateTime     @default(now())
   /// True once this batch's OWN saleEndAt has passed and its leftover stock

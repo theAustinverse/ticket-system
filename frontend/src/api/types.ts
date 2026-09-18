@@ -45,7 +45,7 @@ export interface TicketType {
   /** Only populated on the event-detail response; null if stock isn't initialized. */
   remainingStock?: number | null;
   /** Populated on api.getTicketType and on orders (api.listMyOrders); not on the event-detail response (batch is the parent there instead). */
-  batch?: { name: string; saleEndAt: string | null };
+  batch?: { name: string; saleEndAt: string | null; transferEndAt: string | null };
 }
 
 export interface SaleBatch {
@@ -55,6 +55,8 @@ export interface SaleBatch {
   saleStartAt: string | null;
   /** When this wave's own sale window (purchases + refunds) closes, regardless of the next wave's open time. */
   saleEndAt: string | null;
+  /** After this moment no new ticket transfer can be started for this wave's orders (null = no cutoff). */
+  transferEndAt: string | null;
   ticketTypes: TicketType[];
 }
 

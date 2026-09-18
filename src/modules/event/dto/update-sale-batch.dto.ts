@@ -19,6 +19,14 @@ export class UpdateSaleBatchDto {
   saleEndAt?: string | null;
 
   /**
+   * ISO datetime string after which no NEW ticket transfer can be started for
+   * this wave's orders, or null to clear it (no cutoff). Already-PENDING
+   * transfers are unaffected. Omit to leave the current value untouched.
+   */
+  @IsOptional()
+  transferEndAt?: string | null;
+
+  /**
    * Only ever needs setting back to false — StockSweepService sets it true
    * itself once a sweep runs. Use this to let a batch's sweep run again
    * (e.g. it was marked done under stale data before this batch had a real

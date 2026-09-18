@@ -129,8 +129,13 @@ export class EventService {
     const data: {
       saleStartAt?: Date | null;
       saleEndAt?: Date | null;
+      transferEndAt?: Date | null;
       stockSweepDone?: boolean;
     } = {};
+    if (dto.transferEndAt !== undefined) {
+      data.transferEndAt =
+        dto.transferEndAt === null ? null : new Date(dto.transferEndAt);
+    }
     if (dto.saleStartAt !== undefined) {
       data.saleStartAt = dto.saleStartAt === null ? null : new Date(dto.saleStartAt);
     }

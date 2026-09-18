@@ -733,6 +733,45 @@ describe('OrderService', () => {
         data: { orderId: 'order-1', fromUserId: 'user-1', toUserId: 'user-2' },
       });
     });
+
+    it('rejects a new transfer once the batch transferEndAt has passed', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        ...makeOrder('batch-2'),
+        ticketType: {
+          sessionId: 'session-1',
+          batchId: 'batch-2',
+          batch: { transferEndAt: new Date(Date.now() - 1000) },
+        },
+      });
+      prisma.saleBatch.findMany.mockResolvedValue([
+        { id: 'batch-1' },
+        { id: 'batch-2' },
+      ]);
+
+      await expect(
+        service.createTransfer('user-1', 'order-1', 'friend@gmail.com'),
+      ).rejects.toThrow('轉讓功能已截止');
+      expect(prisma.ticketTransfer.create).not.toHaveBeenCalled();
+    });
+
+    it('still allows a new transfer before transferEndAt', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        ...makeOrder('batch-2'),
+        ticketType: {
+          sessionId: 'session-1',
+          batchId: 'batch-2',
+          batch: { transferEndAt: new Date(Date.now() + 60_000) },
+        },
+      });
+      prisma.saleBatch.findMany.mockResolvedValue([
+        { id: 'batch-1' },
+        { id: 'batch-2' },
+      ]);
+
+      await service.createTransfer('user-1', 'order-1', 'friend@gmail.com');
+
+      expect(prisma.ticketTransfer.create).toHaveBeenCalled();
+    });
   });
 
   describe('acceptTransfer', () => {

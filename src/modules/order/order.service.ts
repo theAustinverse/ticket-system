@@ -598,6 +598,10 @@ export class OrderService {
     ) {
       throw new BadRequestException('第一波票券已停止轉讓功能');
     }
+    const { transferEndAt } = order.ticketType.batch;
+    if (transferEndAt && Date.now() >= transferEndAt.getTime()) {
+      throw new BadRequestException('轉讓功能已截止');
+    }
 
     const existingPending = await this.prisma.ticketTransfer.findFirst({
       where: { orderId, status: 'PENDING' },

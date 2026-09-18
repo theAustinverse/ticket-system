@@ -139,7 +139,11 @@ export const api = {
   adminUpdateBatch: (
     authToken: string,
     batchId: string,
-    dto: { saleStartAt?: string | null; saleEndAt?: string | null },
+    dto: {
+      saleStartAt?: string | null;
+      saleEndAt?: string | null;
+      transferEndAt?: string | null;
+    },
   ) =>
     request<SaleBatch>(`/events/batches/${batchId}`, {
       method: 'PATCH',

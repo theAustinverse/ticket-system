@@ -141,6 +141,12 @@ function eventAlreadyHappened(order: OrderWithSession): boolean {
   return Date.now() > new Date(order.ticketType.session.startTime).getTime();
 }
 
+/** True once the ticket's wave has passed its transfer cutoff (SaleBatch.transferEndAt) — new transfers stop; already-pending ones are unaffected. */
+function transferClosed(order: OrderWithSession): boolean {
+  const transferEndAt = order.ticketType.batch?.transferEndAt;
+  return !!transferEndAt && Date.now() >= new Date(transferEndAt).getTime();
+}
+
 function canCancel(order: OrderWithSession): boolean {
   return (
     CANCELLABLE_STATUSES.includes(order.status) &&
@@ -842,7 +848,8 @@ export function MyTicketsPage() {
                 this policy took effect is untouched: it still shows and can
                 still be cancelled. */}
             {order.status === 'PAID' &&
-              (order.transfers.length > 0 || !order.isFirstWave) && (
+              (order.transfers.length > 0 ||
+                (!order.isFirstWave && !transferClosed(order))) && (
               <div className="ticket-transfer-block">
                 {order.transfers.length > 0 ? (
                   <>

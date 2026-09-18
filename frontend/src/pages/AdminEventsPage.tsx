@@ -434,13 +434,17 @@ function BatchRow({
   const { token } = useAdminAuth();
   const [startDraft, setStartDraft] = useState(isoToTaipeiInputValue(batch.saleStartAt));
   const [endDraft, setEndDraft] = useState(isoToTaipeiInputValue(batch.saleEndAt));
+  const [transferEndDraft, setTransferEndDraft] = useState(
+    isoToTaipeiInputValue(batch.transferEndAt),
+  );
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const dirty =
     startDraft !== isoToTaipeiInputValue(batch.saleStartAt) ||
-    endDraft !== isoToTaipeiInputValue(batch.saleEndAt);
+    endDraft !== isoToTaipeiInputValue(batch.saleEndAt) ||
+    transferEndDraft !== isoToTaipeiInputValue(batch.transferEndAt);
 
   async function handleSave() {
     if (!token) return;
@@ -450,6 +454,7 @@ function BatchRow({
       const updated = await api.adminUpdateBatch(token, batch.id, {
         saleStartAt: taipeiInputValueToIso(startDraft),
         saleEndAt: taipeiInputValueToIso(endDraft),
+        transferEndAt: taipeiInputValueToIso(transferEndDraft),
       });
       onSaved({ ...batch, ...updated });
     } catch (err) {
@@ -497,6 +502,14 @@ function BatchRow({
           onChange={(e) => setEndDraft(e.target.value)}
         />
         <p className="hint">目前：{formatTaipeiDisplay(batch.saleEndAt)}</p>
+      </td>
+      <td data-label="轉讓截止">
+        <input
+          type="datetime-local"
+          value={transferEndDraft}
+          onChange={(e) => setTransferEndDraft(e.target.value)}
+        />
+        <p className="hint">目前：{formatTaipeiDisplay(batch.transferEndAt)}</p>
       </td>
       <td data-label="票種">
         <div className="admin-tickettype-list">
@@ -631,6 +644,7 @@ export function AdminEventsPage() {
                     <th>波次</th>
                     <th>開賣時間</th>
                     <th>截止時間</th>
+                    <th>轉讓截止</th>
                     <th>票種</th>
                     <th></th>
                   </tr>
