@@ -615,6 +615,13 @@ button:disabled {
   text-decoration: underline;
 }
 
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 1.5rem;
+}
+
 /* ---------- status text ---------- */
 .error {
   color: var(--neon);

@@ -7,7 +7,9 @@ export function LoginPage() {
   const location = useLocation();
   const initialMode =
     (location.state as { mode?: 'login' | 'register' } | null)?.mode ?? 'login';
-  const [mode, setMode] = useState<'login' | 'register' | 'verify'>(initialMode);
+  const [mode, setMode] = useState<
+    'login' | 'register' | 'verify' | 'forgot' | 'reset'
+  >(initialMode);
 
   // The navbar's 登入/註冊 links both point to "/login", so React Router only
   // re-renders (not remounts) between them — the useState initializer above
@@ -26,6 +28,8 @@ export function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Shown on the login screen after a successful password reset.
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { setToken } = useAuth();
   const navigate = useNavigate();
@@ -39,7 +43,7 @@ export function LoginPage() {
     e.preventDefault();
     setError(null);
 
-    if (mode === 'register' && password !== confirmPassword) {
+    if ((mode === 'register' || mode === 'reset') && password !== confirmPassword) {
       setError('兩次輸入的密碼不一致，請重新確認');
       return;
     }
@@ -53,6 +57,16 @@ export function LoginPage() {
       } else if (mode === 'register') {
         await api.register(email, password);
         setMode('verify');
+      } else if (mode === 'forgot') {
+        await api.forgotPassword(email);
+        setMode('reset');
+      } else if (mode === 'reset') {
+        await api.resetPassword(email, code, password);
+        setPassword('');
+        setConfirmPassword('');
+        setCode('');
+        setNotice('密碼已重設，請使用新密碼登入。');
+        setMode('login');
       } else {
         const { accessToken } = await api.verifyRegistration(email, code);
         setToken(accessToken);
@@ -63,6 +77,87 @@ export function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (mode === 'forgot') {
+    return (
+      <div className="page page-narrow">
+        <h1>忘記密碼</h1>
+        <p className="hint">
+          輸入註冊時使用的信箱，我們會寄一組六位數驗證碼給您，用來設定新密碼。
+        </p>
+        <form onSubmit={handleSubmit} className="form">
+          <label>
+            Email
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+          {error && <p className="error">{error}</p>}
+          <button type="submit" disabled={loading}>
+            {loading ? '寄送中…' : '寄送驗證碼'}
+          </button>
+        </form>
+        <button className="link-button" onClick={() => setMode('login')}>
+          返回登入
+        </button>
+      </div>
+    );
+  }
+
+  if (mode === 'reset') {
+    return (
+      <div className="page page-narrow">
+        <h1>設定新密碼</h1>
+        <p className="hint">
+          若 {email} 已註冊，驗證碼已寄出（10 分鐘內有效）。沒收到請檢查垃圾郵件匣，或稍等一分鐘後重新寄送。
+        </p>
+        <form onSubmit={handleSubmit} className="form">
+          <label>
+            驗證碼
+            <input
+              required
+              minLength={6}
+              maxLength={6}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </label>
+          <label>
+            新密碼
+            <input
+              type="password"
+              required
+              minLength={8}
+              maxLength={72}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+          <label>
+            確認新密碼
+            <input
+              type="password"
+              required
+              minLength={8}
+              maxLength={72}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+          </label>
+          {error && <p className="error">{error}</p>}
+          <button type="submit" disabled={loading}>
+            {loading ? '處理中…' : '重設密碼'}
+          </button>
+        </form>
+        <button className="link-button" onClick={() => setMode('forgot')}>
+          重新寄送驗證碼
+        </button>
+      </div>
+    );
   }
 
   if (mode === 'verify') {
@@ -101,6 +196,7 @@ export function LoginPage() {
       {sessionExpired && mode === 'login' && (
         <p className="error">登入已過期，請重新登入後再繼續。</p>
       )}
+      {notice && mode === 'login' && <p className="success">{notice}</p>}
       <form onSubmit={handleSubmit} className="form">
         <label>
           Email
@@ -141,12 +237,30 @@ export function LoginPage() {
           {loading ? '處理中…' : mode === 'login' ? '登入' : '下一步：寄送驗證碼'}
         </button>
       </form>
-      <button
-        className="link-button"
-        onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-      >
-        {mode === 'login' ? '還沒有帳號？註冊' : '已經有帳號？登入'}
-      </button>
+      <div className="link-row">
+        <button
+          className="link-button"
+          onClick={() => {
+            setNotice(null);
+            setMode(mode === 'login' ? 'register' : 'login');
+          }}
+        >
+          {mode === 'login' ? '還沒有帳號？註冊' : '已經有帳號？登入'}
+        </button>
+        {mode === 'login' && (
+          <button
+            className="link-button"
+            onClick={() => {
+              setNotice(null);
+              setError(null);
+              setPassword('');
+              setMode('forgot');
+            }}
+          >
+            忘記密碼？
+          </button>
+        )}
+      </div>
     </div>
   );
 }

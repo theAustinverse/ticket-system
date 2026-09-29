@@ -1,4 +1,4 @@
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Logger, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 
@@ -14,8 +14,11 @@ describe('AuthService', () => {
     redisStore = new Map();
     redis = {
       get: jest.fn(async (key: string) => redisStore.get(key) ?? null),
-      set: jest.fn(async (key: string, value: string) => {
+      // Honors NX (only set if absent) like real Redis; anything else overwrites.
+      set: jest.fn(async (key: string, value: string, ...args: unknown[]) => {
+        if (args.includes('NX') && redisStore.has(key)) return null;
         redisStore.set(key, value);
+        return 'OK';
       }),
       del: jest.fn(async (key: string) => {
         redisStore.delete(key);
@@ -27,9 +30,12 @@ describe('AuthService', () => {
       }),
       expire: jest.fn(async () => 1),
     };
-    prisma = { user: { findUnique: jest.fn(), create: jest.fn() } };
+    prisma = { user: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() } };
     jwtService = { sign: jest.fn().mockReturnValue('signed-jwt') };
-    emailService = { sendVerificationCode: jest.fn() };
+    emailService = {
+      sendVerificationCode: jest.fn(),
+      sendPasswordResetCode: jest.fn().mockResolvedValue(undefined),
+    };
     service = new AuthService(prisma, jwtService, emailService, redis);
     delete process.env.LOAD_TEST_MODE;
     delete process.env.ADMIN_USERNAME;
@@ -151,6 +157,185 @@ describe('AuthService', () => {
         service.login({ email: 'nobody@gmail.com', password: 'whatever' }),
       ).rejects.toThrow('Invalid credentials');
       expect(redisStore.get('login-attempts:nobody@gmail.com')).toBe('1');
+    });
+  });
+
+  describe('forgotPassword', () => {
+    /** The email is sent without being awaited — let that promise settle. */
+    const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+    beforeEach(() => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'me@gmail.com',
+      });
+    });
+
+    it('stores a 6-digit code bound to the account and emails that same code', async () => {
+      await service.forgotPassword({ email: 'me@gmail.com' });
+      await flush();
+
+      const stored = JSON.parse(redisStore.get('password-reset:me@gmail.com')!);
+      expect(stored.userId).toBe('user-1');
+      expect(stored.code).toMatch(/^\d{6}$/);
+      expect(emailService.sendPasswordResetCode).toHaveBeenCalledWith(
+        'me@gmail.com',
+        stored.code,
+      );
+    });
+
+    it('gives an unregistered address the identical response and sends nothing (no email-enumeration oracle)', async () => {
+      const registered = await service.forgotPassword({ email: 'me@gmail.com' });
+
+      prisma.user.findUnique.mockResolvedValue(null);
+      const unknown = await service.forgotPassword({ email: 'nobody@gmail.com' });
+      await flush();
+
+      expect(unknown).toEqual(registered);
+      expect(emailService.sendPasswordResetCode).toHaveBeenCalledTimes(1);
+      expect(redisStore.has('password-reset:nobody@gmail.com')).toBe(false);
+    });
+
+    it('drops a second request inside the cooldown instead of emailing again', async () => {
+      await service.forgotPassword({ email: 'me@gmail.com' });
+      const firstCode = JSON.parse(redisStore.get('password-reset:me@gmail.com')!).code;
+
+      const second = await service.forgotPassword({ email: 'me@gmail.com' });
+      await flush();
+
+      expect(second).toEqual({
+        message: 'If that email is registered, a reset code has been sent',
+      });
+      expect(emailService.sendPasswordResetCode).toHaveBeenCalledTimes(1);
+      // The code the user already received must still be the valid one.
+      expect(JSON.parse(redisStore.get('password-reset:me@gmail.com')!).code).toBe(firstCode);
+    });
+
+    it('does not surface a mail-provider failure, which would reveal the address is registered', async () => {
+      const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      emailService.sendPasswordResetCode.mockRejectedValue(new Error('resend down'));
+
+      await expect(
+        service.forgotPassword({ email: 'me@gmail.com' }),
+      ).resolves.toEqual({
+        message: 'If that email is registered, a reset code has been sent',
+      });
+      await flush();
+
+      expect(logged).toHaveBeenCalled();
+      logged.mockRestore();
+    });
+  });
+
+  describe('resetPassword', () => {
+    async function seedReset(email: string, code: string, userId = 'user-1') {
+      await redis.set(
+        `password-reset:${email.toLowerCase()}`,
+        JSON.stringify({ code, userId }),
+      );
+    }
+
+    beforeEach(() => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
+    });
+
+    it('sets the new password (hashed) with the correct code, lifts any login lockout, and spends the code', async () => {
+      await seedReset('me@gmail.com', '123456');
+      await redis.set('login-attempts:me@gmail.com', '5');
+
+      const result = await service.resetPassword({
+        email: 'me@gmail.com',
+        code: '123456',
+        newPassword: 'brand-new-pass',
+      });
+
+      expect(result).toEqual({ message: 'Password has been reset' });
+      const { where, data } = prisma.user.update.mock.calls[0][0];
+      expect(where).toEqual({ id: 'user-1' });
+      expect(data.passwordHash).not.toBe('brand-new-pass');
+      expect(await bcrypt.compare('brand-new-pass', data.passwordHash)).toBe(true);
+      expect(redisStore.has('password-reset:me@gmail.com')).toBe(false);
+      expect(redisStore.has('login-attempts:me@gmail.com')).toBe(false);
+
+      // Single use: replaying the same code afterwards is refused.
+      await expect(
+        service.resetPassword({
+          email: 'me@gmail.com',
+          code: '123456',
+          newPassword: 'another-pass-1',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.user.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a wrong code without touching the password', async () => {
+      await seedReset('me@gmail.com', '123456');
+
+      await expect(
+        service.resetPassword({
+          email: 'me@gmail.com',
+          code: '000000',
+          newPassword: 'brand-new-pass',
+        }),
+      ).rejects.toThrow('Incorrect reset code');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('kills the code after MAX_RESET_ATTEMPTS wrong guesses, so even the right code no longer works', async () => {
+      await seedReset('me@gmail.com', '123456');
+
+      for (let i = 0; i < 4; i++) {
+        await expect(
+          service.resetPassword({
+            email: 'me@gmail.com',
+            code: '000000',
+            newPassword: 'brand-new-pass',
+          }),
+        ).rejects.toThrow('Incorrect reset code');
+      }
+      await expect(
+        service.resetPassword({
+          email: 'me@gmail.com',
+          code: '000000',
+          newPassword: 'brand-new-pass',
+        }),
+      ).rejects.toThrow('Too many incorrect attempts');
+
+      await expect(
+        service.resetPassword({
+          email: 'me@gmail.com',
+          code: '123456',
+          newPassword: 'brand-new-pass',
+        }),
+      ).rejects.toThrow('expired or not found');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects when no code was ever requested (or it expired)', async () => {
+      await expect(
+        service.resetPassword({
+          email: 'me@gmail.com',
+          code: '123456',
+          newPassword: 'brand-new-pass',
+        }),
+      ).rejects.toThrow('expired or not found');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a code that was issued for a different account sharing the same lowercased key', async () => {
+      // Code was issued for user-2 (e.g. "Me@gmail.com"), but the request
+      // resolves to user-1 ("me@gmail.com") — must not reset user-1.
+      await seedReset('me@gmail.com', '123456', 'user-2');
+
+      await expect(
+        service.resetPassword({
+          email: 'me@gmail.com',
+          code: '123456',
+          newPassword: 'brand-new-pass',
+        }),
+      ).rejects.toThrow('expired or not found');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(redisStore.has('password-reset:me@gmail.com')).toBe(false);
     });
   });
 

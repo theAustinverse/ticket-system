@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -16,6 +17,8 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyRegistrationDto } from './dto/verify-registration.dto';
 import { AdminLoginDto } from './dto/admin-login.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 const SALT_ROUNDS = 10;
 const VERIFICATION_TTL_SECONDS = 10 * 60;
@@ -25,6 +28,18 @@ const MAX_VERIFICATION_ATTEMPTS = 5;
 /** Caps failed password attempts per account before a temporary lockout. */
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOGIN_LOCKOUT_SECONDS = 15 * 60;
+const PASSWORD_RESET_TTL_SECONDS = 10 * 60;
+/** Caps wrong guesses against a reset code — same reasoning as MAX_VERIFICATION_ATTEMPTS. */
+const MAX_RESET_ATTEMPTS = 5;
+/** Minimum gap between reset emails to one address, so the endpoint can't be
+ * used to flood someone's inbox — per-address, not per-IP, so spreading the
+ * requests across many IPs doesn't get around it. */
+const PASSWORD_RESET_COOLDOWN_SECONDS = 60;
+
+/** Identical for a registered and an unregistered address on purpose — see forgotPassword. */
+const FORGOT_PASSWORD_RESPONSE = {
+  message: 'If that email is registered, a reset code has been sent',
+};
 
 /** Matches only the synthetic accounts a load test creates — never a real user's address. */
 const LOAD_TEST_EMAIL_PATTERN = /^loadtest\d+@gmail\.com$/i;
@@ -40,8 +55,18 @@ interface PendingRegistration {
   code: string;
 }
 
+interface PendingPasswordReset {
+  code: string;
+  /** Bound to the account the code was issued for, not just the address —
+   * User.email is unique case-sensitively, so two rows can differ only by
+   * case while sharing one key (keys are lowercased) and, on Gmail, one inbox. */
+  userId: string;
+}
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -59,6 +84,18 @@ export class AuthService {
 
   private loginAttemptsKey(email: string) {
     return `login-attempts:${email.toLowerCase()}`;
+  }
+
+  private passwordResetKey(email: string) {
+    return `password-reset:${email.toLowerCase()}`;
+  }
+
+  private passwordResetAttemptsKey(email: string) {
+    return `password-reset-attempts:${email.toLowerCase()}`;
+  }
+
+  private passwordResetCooldownKey(email: string) {
+    return `password-reset-cooldown:${email.toLowerCase()}`;
   }
 
   /** Increments a Redis failure counter, expiring it after `windowSeconds` from the first failure. */
@@ -185,6 +222,112 @@ export class AuthService {
 
     await this.redis.del(attemptsKey);
     return this.buildTokenResponse(user.id, user.email, user.role);
+  }
+
+  /**
+   * Starts a password reset: emails a one-time code to the address if it
+   * belongs to an account. The response is the same whether or not it does —
+   * a different answer for "no such account" would turn this into an oracle
+   * for which emails are registered (login already goes to lengths to avoid
+   * exactly that). The email itself is sent without being awaited, so the
+   * response time doesn't give it away either.
+   */
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      select: { id: true, email: true },
+    });
+    if (!user) {
+      return FORGOT_PASSWORD_RESPONSE;
+    }
+
+    // Atomic (SET NX) so concurrent requests can't both slip past the
+    // cooldown. A request inside the cooldown is dropped silently rather than
+    // rejected, for the same no-oracle reason as above.
+    const acquired = await this.redis.set(
+      this.passwordResetCooldownKey(dto.email),
+      '1',
+      'EX',
+      PASSWORD_RESET_COOLDOWN_SECONDS,
+      'NX',
+    );
+    if (acquired !== 'OK') {
+      return FORGOT_PASSWORD_RESPONSE;
+    }
+
+    const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+    const pending: PendingPasswordReset = { code, userId: user.id };
+    await this.redis.set(
+      this.passwordResetKey(dto.email),
+      JSON.stringify(pending),
+      'EX',
+      PASSWORD_RESET_TTL_SECONDS,
+    );
+
+    void this.emailService.sendPasswordResetCode(user.email, code).catch((err) => {
+      this.logger.error(
+        `Password reset email to ${user.email} was not sent: ${err instanceof Error ? err.message : err}`,
+      );
+    });
+
+    return FORGOT_PASSWORD_RESPONSE;
+  }
+
+  /**
+   * Completes a password reset. The wrong-guess counter is deliberately not
+   * cleared when a fresh code is issued, so requesting new codes can't be
+   * used to earn more guesses: an address gets at most MAX_RESET_ATTEMPTS
+   * wrong guesses per window no matter how many codes are requested. Success
+   * also lifts any login lockout, since the person has just proven they own
+   * the inbox.
+   */
+  async resetPassword(dto: ResetPasswordDto) {
+    const key = this.passwordResetKey(dto.email);
+    const raw = await this.redis.get(key);
+    if (!raw) {
+      throw new BadRequestException(
+        'Reset code expired or not found, please request a new one',
+      );
+    }
+
+    const pending: PendingPasswordReset = JSON.parse(raw);
+    if (pending.code !== dto.code) {
+      const attempts = await this.recordFailure(
+        this.passwordResetAttemptsKey(dto.email),
+        PASSWORD_RESET_TTL_SECONDS,
+      );
+      if (attempts >= MAX_RESET_ATTEMPTS) {
+        await this.redis.del(key);
+        throw new BadRequestException(
+          'Too many incorrect attempts — please request a new code',
+        );
+      }
+      throw new BadRequestException('Incorrect reset code');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      select: { id: true },
+    });
+    if (!user || user.id !== pending.userId) {
+      await this.redis.del(key);
+      throw new BadRequestException(
+        'Reset code expired or not found, please request a new one',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    });
+
+    // Single use: gone before anything else can replay it.
+    await this.redis.del(key);
+    await this.redis.del(this.passwordResetAttemptsKey(dto.email));
+    await this.redis.del(this.loginAttemptsKey(dto.email));
+
+    return { message: 'Password has been reset' };
   }
 
   /**

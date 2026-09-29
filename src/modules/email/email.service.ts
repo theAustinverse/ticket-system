@@ -92,6 +92,37 @@ export class EmailService {
     }
   }
 
+  async sendPasswordResetCode(email: string, code: string): Promise<void> {
+    if (!this.resend) {
+      this.logger.warn(
+        `RESEND_API_KEY not set — skipping send, password reset code for ${email} is ${code}`,
+      );
+      return;
+    }
+
+    const { error } = await this.resend.emails.send({
+      from: FROM_ADDRESS,
+      to: email,
+      subject: '【TS年度盛會】重設密碼驗證碼',
+      html: `
+        <div style="font-family: sans-serif; padding: 24px; color: #222;">
+          <h2>重設 TS年度盛會 搶票系統密碼</h2>
+          <p>我們收到了重設您帳號密碼的請求，您的驗證碼是：</p>
+          <p style="font-size: 32px; font-weight: bold; letter-spacing: 4px;">${code}</p>
+          <p>驗證碼將於 10 分鐘後失效，請回到網站輸入驗證碼並設定新密碼。</p>
+          <p>若非您本人操作，請直接忽略此信，您的密碼不會有任何變動。</p>
+        </div>
+      `,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to send password reset email to ${email}: ${error.message}`,
+      );
+      throw new Error('Failed to send password reset email');
+    }
+  }
+
   async sendOrderConfirmation(
     email: string,
     d: OrderConfirmationDetails,

@@ -140,6 +140,8 @@ Two different "extra people" models, easy to conflate. Group bundles (`fixedQuan
 
 Two independent surfaces. `AuthModule` issues JWTs for real user accounts (`JwtAuthGuard`). Admin back-office login is a **single shared** username/bcrypt-hash pair from env (`ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH`), not a `User` row — which is why `OrderHistory.actorUserId` is nullable and admin actions pass a label string instead. `AdminGuard` stacks on top of `JwtAuthGuard` for `/admin/*`.
 
+Password reset (`forgotPassword`/`resetPassword` in `AuthService`) emails a 6-digit code held in Redis, mirroring registration verification. Two properties are deliberate: `forgotPassword` answers identically whether or not the address is registered (and doesn't await the email), so it can't be used to enumerate accounts — don't "helpfully" add a not-found error or surface a mail failure; and the wrong-guess counter is *not* reset when a new code is issued, so requesting codes can't buy more guesses. JWTs are stateless, so a reset does not revoke sessions already issued (up to `JWT_EXPIRES_IN`).
+
 ### Frontend
 
 Plain CSS, no framework — a 1920s Hong Kong casino gold/red theme driven by custom properties in `frontend/src/styles.css` (`--void`, `--gold`, `--paper`). Match the palette rather than introducing ad hoc colors. All API calls go through the typed client in `frontend/src/api/client.ts`; add endpoints there instead of calling `fetch` from a page. User-facing and `/admin/*` routes are split in `App.tsx` with separate nav bars and separate auth contexts.
