@@ -1623,3 +1623,178 @@ button:disabled {
   filter: brightness(1.05);
 }
 
+
+/* ---------- entry QR codes ---------- */
+.ticket-qr {
+  background: var(--paper);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.ticket-qr img {
+  display: block;
+}
+
+.seat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1rem;
+  margin-top: 0.8rem;
+}
+
+.seat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  text-align: center;
+}
+
+.seat-card.is-done {
+  border-color: rgba(125, 224, 141, 0.55);
+}
+
+.seat-card.is-void {
+  opacity: 0.6;
+}
+
+.seat-card .seat-name {
+  color: var(--gold-bright);
+  font-weight: 700;
+}
+
+.public-ticket {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.public-ticket .seat-name {
+  color: var(--gold-bright);
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* ---------- door check-in ---------- */
+.checkin-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.checkin-stats {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--paper-dim);
+}
+
+.checkin-stats strong {
+  color: var(--gold-bright);
+  font-size: 1.6rem;
+  font-family: 'Noto Serif TC', serif;
+}
+
+.checkin-camera {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.checkin-camera video {
+  width: 100%;
+  max-width: 420px;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--void);
+}
+
+.checkin-camera video.is-hidden {
+  display: none;
+}
+
+.checkin-quick {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  font-size: 0.85rem;
+  color: var(--paper-dim);
+}
+
+.checkin-result {
+  padding: 1rem 1.1rem;
+  border: 2px solid;
+  border-radius: 4px;
+  background: rgba(6, 4, 3, 0.8);
+}
+
+.checkin-result.is-good {
+  border-color: #7de08d;
+}
+
+.checkin-result.is-bad {
+  border-color: var(--neon);
+}
+
+.checkin-result .checkin-verdict {
+  margin: 0 0 0.4rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.checkin-result.is-good .checkin-verdict {
+  color: #7de08d;
+}
+
+.checkin-result.is-bad .checkin-verdict {
+  color: var(--neon);
+}
+
+.checkin-name {
+  color: var(--gold-bright);
+  font-weight: 700;
+}
+
+.checkin-result .checkin-name {
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+.checkin-search {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.checkin-search input {
+  flex: 1;
+  min-width: 0;
+}
+
+.checkin-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checkin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.checkin-row > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

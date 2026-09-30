@@ -21,6 +21,8 @@ const HISTORY_ACTION_LABELS: Record<string, string> = {
   TRANSFER_REJECTED: '拒絕轉讓',
   TRANSFER_CANCELLED: '取消轉讓',
   ADMIN_NOTE_UPDATED: '後台備註',
+  CHECKED_IN: '現場報到',
+  CHECK_IN_UNDONE: '撤銷報到',
 };
 
 /** Tolerates orders placed before this feature, which stored a plain member-name string. */

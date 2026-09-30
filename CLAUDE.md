@@ -132,6 +132,18 @@ Every mutation writes an `OrderHistory` row via `recordOrderHistory()` (`src/mod
 - That swallowing means **a broken call site fails no test unless you assert on it**. Any new order-mutating method needs a test asserting the exact `action`/`before`/`after` shape.
 - It records forward only; it does not backfill orders predating the feature.
 
+### Entry tickets and door check-in
+
+Every order has exactly `quantity` `Ticket` rows (seats `0..quantity-1`), each with a random token that its QR code carries as a `/t/<token>` link. `src/modules/checkin/` owns the door side. Invariants that live across files:
+- **Any code path that creates an order must create its seats in the same statement** (`tickets: { create: ticketSeatsFor(quantity) }`, as `createOrder` does). The migration backfilled everything that existed before.
+- **Any code path that changes an order's owner must rotate every seat's token** in the same transaction, as `acceptTransfer` does — otherwise the previous owner's screenshots still get in.
+- Who a seat belongs to is computed by `seatHolder()` in `ticket-seats.ts`, never stored — see the next section for the two models it follows (and `buyingForFamily`, where the buyer holds no seat at all).
+- `isSeatReleased()` mirrors `StockSweepService`'s rule for which blank group-member seats it gave back to the pool. **Change one, change the other**, or the door will admit someone into a resold seat (or refuse a valid one).
+- Check-in is a conditional write on `checkedInAt IS NULL`; keep it that way.
+- Door staff use their own login (`CHECKIN_USERNAME`/`CHECKIN_PASSWORD_HASH`, role `CHECKIN`, 12h token carrying the staff name). Only `CheckinGuard` admits it. Its lockout is per IP on purpose — a global one would let anyone lock every scanner out on event day.
+- Check-in routes carry deliberately high `@RateLimit`s: the global limiter runs before auth, so it buckets by IP alone, and every door phone shares the venue's IP.
+- Search and headcount load all orders and filter in memory (member names live in JSON). Fine for hundreds of orders.
+
 ### Companions vs. group members
 
 Two different "extra people" models, easy to conflate. Group bundles (`fixedQuantity`) use `Order.groupMembers`, one entry per bundle seat. Multi-quantity individual tickets (`maxQuantityPerOrder`) use `Order.companions`, with `buyingForFamily` marking whether ticket #1 is the buyer's own. They have different edit cutoffs and different admin-export columns.

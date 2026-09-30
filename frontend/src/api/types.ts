@@ -159,6 +159,60 @@ export interface OrderWithSession extends Order {
   transfers: (TicketTransfer & { toUser: { email: string } })[];
   /** True for a 第一波 (earliest-created batch) order — createTransfer rejects new transfers for these. */
   isFirstWave: boolean;
+  /** One per QR code, in seat order. */
+  seats: Seat[];
+}
+
+export type SeatRole = 'LEADER' | 'MEMBER' | 'SELF' | 'COMPANION';
+
+export interface SeatHolder {
+  /** Null when that seat's name was never filled in. */
+  name: string | null;
+  role: SeatRole;
+  mealPreference: string | null;
+}
+
+export interface Seat {
+  id: string;
+  seatIndex: number;
+  token: string;
+  checkedInAt: string | null;
+  holder: SeatHolder;
+  /** Given back to the pool when the wave closed with this member left blank — its QR won't get anyone in. */
+  released: boolean;
+}
+
+export type SeatStatus = 'ORDER_NOT_ACTIVE' | 'SEAT_RELEASED' | 'CHECKED_IN' | 'VALID';
+
+export type CheckInResult = 'CHECKED_IN' | 'ALREADY_CHECKED_IN' | 'ORDER_NOT_ACTIVE' | 'SEAT_RELEASED';
+
+/** What door staff see for one seat. */
+export interface CheckinSeat {
+  id: string;
+  seatIndex: number;
+  seatCount: number;
+  holder: SeatHolder;
+  status: SeatStatus;
+  checkedInAt: string | null;
+  checkedInBy: string | null;
+  orderId: string;
+  ticketTypeName: string;
+  buyerEmail: string;
+  team: string;
+}
+
+/** The no-login share page's view of one seat. */
+export interface PublicTicket {
+  holderName: string | null;
+  role: SeatRole;
+  seatIndex: number;
+  seatCount: number;
+  status: SeatStatus;
+  checkedInAt: string | null;
+  ticketTypeName: string;
+  eventName: string;
+  venue: string;
+  startTime: string;
 }
 
 export interface IncomingTransfer extends TicketTransfer {

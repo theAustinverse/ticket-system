@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { SeatQrSection } from '../components/SeatQrSection';
 import type {
   Companion,
   GroupMember,
@@ -842,6 +843,7 @@ export function MyTicketsPage() {
                 </p>
               )
             )}
+            <SeatQrSection order={order} />
             {/* 第一波 orders can't start a new transfer (createTransfer rejects it
                 server-side) — hide the button entirely rather than let someone
                 click through to a rejection. A transfer already PENDING before

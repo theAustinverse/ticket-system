@@ -1,4 +1,7 @@
 import type {
+  CheckInResult,
+  CheckinSeat,
+  PublicTicket,
   AdminOrderRow,
   AdminTeamStat,
   AdminUser,
@@ -34,6 +37,8 @@ export class ApiError extends Error {
 /** Must match AuthContext / AdminAuthContext — the session this module expires on a 401. */
 const USER_TOKEN_KEY = 'ticket-system-token';
 const ADMIN_TOKEN_KEY = 'admin-token';
+/** Door-staff session — deliberately its own key, like the admin one. */
+export const CHECKIN_TOKEN_KEY = 'checkin-token';
 
 /** The Bearer value actually sent, so a 401 can tell which session went stale. */
 function sentBearer(headers: HeadersInit | undefined): string | null {
@@ -70,6 +75,11 @@ function handleUnauthorized(path: string, options: RequestInit) {
   const sent = sentBearer(options.headers);
   if (!sent) return; // Unauthenticated call; there's no session to expire.
 
+  if (sent === localStorage.getItem(CHECKIN_TOKEN_KEY)) {
+    localStorage.removeItem(CHECKIN_TOKEN_KEY);
+    window.location.assign('/checkin/login?expired=1');
+    return;
+  }
   if (sent === localStorage.getItem(ADMIN_TOKEN_KEY)) {
     localStorage.removeItem(ADMIN_TOKEN_KEY);
     window.location.assign('/admin/login?expired=1');
@@ -133,6 +143,42 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, code, newPassword }),
     }),
+
+  checkinLogin: (username: string, password: string, staffName: string) =>
+    request<{ accessToken: string }>('/auth/checkin-login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, staffName }),
+    }),
+
+  checkinScan: (token: string, ticketToken: string) =>
+    request<CheckinSeat>(`/checkin/scan/${encodeURIComponent(ticketToken)}`, {
+      headers: authHeader(token),
+    }),
+
+  checkinCheckIn: (token: string, ticketId: string) =>
+    request<{ result: CheckInResult; ticket: CheckinSeat }>(
+      `/checkin/tickets/${encodeURIComponent(ticketId)}`,
+      { method: 'POST', headers: authHeader(token) },
+    ),
+
+  checkinUndo: (token: string, ticketId: string) =>
+    request<CheckinSeat>(`/checkin/tickets/${encodeURIComponent(ticketId)}/undo`, {
+      method: 'POST',
+      headers: authHeader(token),
+    }),
+
+  checkinSearch: (token: string, q: string) =>
+    request<CheckinSeat[]>(`/checkin/search?q=${encodeURIComponent(q)}`, {
+      headers: authHeader(token),
+    }),
+
+  checkinStats: (token: string) =>
+    request<{ total: number; checkedIn: number }>('/checkin/stats', {
+      headers: authHeader(token),
+    }),
+
+  getPublicTicket: (ticketToken: string) =>
+    request<PublicTicket>(`/tickets/${encodeURIComponent(ticketToken)}`),
 
   adminLogin: (username: string, password: string) =>
     request<{ accessToken: string }>('/auth/admin-login', {

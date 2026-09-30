@@ -1,4 +1,4 @@
-import { Link, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { CinematicBackground } from './components/CinematicBackground';
 import { Prologue } from './components/Prologue';
 import { BackgroundMusic } from './components/BackgroundMusic';
@@ -21,6 +21,11 @@ import { AdminEventsPage } from './pages/AdminEventsPage';
 import { AdminChatPage } from './pages/AdminChatPage';
 import { AdminAiImagePage } from './pages/AdminAiImagePage';
 import { Lab3DPage } from './pages/Lab3DPage';
+import { CheckinLoginPage } from './pages/CheckinLoginPage';
+import { CheckinPage } from './pages/CheckinPage';
+import { PublicTicketPage } from './pages/PublicTicketPage';
+import { CHECKIN_TOKEN_KEY } from './api/client';
+import { decodeJwtClaim } from './jwt';
 import { useAuth } from './context/AuthContext';
 import { useAdminAuth } from './context/AdminAuthContext';
 import { GuidedTour } from './tour/GuidedTour';
@@ -75,18 +80,48 @@ function AdminNavBar() {
   );
 }
 
+function CheckinNavBar() {
+  const navigate = useNavigate();
+  const token = localStorage.getItem(CHECKIN_TOKEN_KEY);
+  const staffName = token ? decodeJwtClaim(token, 'name') : null;
+  return (
+    <nav className="navbar">
+      <span className="brand">報到系統</span>
+      {token && (
+        <div className="navbar-actions">
+          <span className="hint">{staffName ?? '後台'}</span>
+          <button
+            className="link-button"
+            onClick={() => {
+              localStorage.removeItem(CHECKIN_TOKEN_KEY);
+              navigate('/checkin/login');
+            }}
+          >
+            登出
+          </button>
+        </div>
+      )}
+    </nav>
+  );
+}
+
 export function App() {
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith('/admin');
+  const isCheckinRoute = location.pathname.startsWith('/checkin');
+  // A guest opening their shared ticket at the door, or a scanner phone, must
+  // see the page immediately: no intro overlay, no music starting on the
+  // first tap, no chat bubble or tour covering the QR / the camera.
+  const isBareRoute = isCheckinRoute || location.pathname.startsWith('/t/');
 
   return (
     <>
-      <CinematicBackground />
-      <Prologue />
-      <BackgroundMusic />
-      {!isAdminRoute && <ChatWidget />}
-      {!isAdminRoute && <GuidedTour />}
-      {isAdminRoute ? <AdminNavBar /> : <NavBar />}
+      {!isCheckinRoute && <CinematicBackground />}
+      {!isBareRoute && <Prologue />}
+      {!isBareRoute && <BackgroundMusic />}
+      {!isAdminRoute && !isBareRoute && <ChatWidget />}
+      {!isAdminRoute && !isBareRoute && <GuidedTour />}
+      {isCheckinRoute ? <CheckinNavBar /> : isAdminRoute ? <AdminNavBar /> : <NavBar />}
       <Routes>
         <Route path="/" element={<EventListPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -99,6 +134,9 @@ export function App() {
         <Route path="/queue/:ticketTypeId" element={<QueuePage />} />
         <Route path="/order/:ticketTypeId" element={<OrderPage />} />
         <Route path="/orders/:orderId" element={<OrderStatusPage />} />
+        <Route path="/t/:token" element={<PublicTicketPage />} />
+        <Route path="/checkin/login" element={<CheckinLoginPage />} />
+        <Route path="/checkin" element={<CheckinPage />} />
         <Route path="/admin/login" element={<AdminLoginPage />} />
         <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />
