@@ -192,6 +192,7 @@ model Order {
   adminNote         String?
   transfers         TicketTransfer[]
   history           OrderHistory[]
+  tickets           Ticket[]
 
   @@index([userId])
   @@index([ticketTypeId])
@@ -278,4 +279,31 @@ model ChatMessage {
   createdAt  DateTime @default(now())
 
   @@index([userId])
+}
+
+/// One admittable seat on an order — the unit a QR code stands for and the
+/// unit that gets checked in at the door. An order always has exactly
+/// `quantity` of these, seatIndex 0..quantity-1; which person each seat
+/// belongs to is derived at read time from the order's own fields (see
+/// src/modules/checkin/ticket-seats.ts), never copied here, so a corrected
+/// member/companion name shows up at the door without touching this table.
+model Ticket {
+  id          String    @id @default(cuid())
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId     String
+  seatIndex   Int
+  /// What the QR code encodes: random and unguessable, unlike the order id,
+  /// which appears in URLs and is not a secret. Rotated when the order is
+  /// transferred, so the previous owner's screenshots stop working.
+  token       String    @unique
+  /// Set once, atomically (conditional update) — the second scan of the
+  /// same seat is refused, which is what makes a forwarded screenshot
+  /// useless after the real holder has already come in.
+  checkedInAt DateTime?
+  /// Name the check-in staff member entered at login (the check-in account
+  /// is shared, so this is the only way to tell scanners apart).
+  checkedInBy String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([orderId, seatIndex])
 }

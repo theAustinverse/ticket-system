@@ -7,6 +7,8 @@ export interface JwtPayload {
   sub: string;
   email: string;
   role: string;
+  /** Only on check-in staff tokens: the name entered at login. */
+  name?: string;
 }
 
 @Injectable()
@@ -24,6 +26,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   validate(payload: JwtPayload) {
-    return { userId: payload.sub, email: payload.email, role: payload.role };
+    return {
+      userId: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      name: payload.name,
+    };
   }
 }

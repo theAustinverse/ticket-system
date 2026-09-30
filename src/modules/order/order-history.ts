@@ -9,7 +9,9 @@ export type OrderHistoryAction =
   | 'TRANSFER_ACCEPTED'
   | 'TRANSFER_REJECTED'
   | 'TRANSFER_CANCELLED'
-  | 'ADMIN_NOTE_UPDATED';
+  | 'ADMIN_NOTE_UPDATED'
+  | 'CHECKED_IN'
+  | 'CHECK_IN_UNDONE';
 
 interface RecordOrderHistoryParams {
   orderId: string;

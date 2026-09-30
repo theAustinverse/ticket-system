@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AdminGuard } from './admin.guard';
+import { CheckinGuard } from './checkin.guard';
 import { EmailModule } from '../email/email.module';
 import { getJwtSecret } from './jwt-secret';
 
@@ -22,7 +23,7 @@ import { getJwtSecret } from './jwt-secret';
     EmailModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard, AdminGuard],
-  exports: [JwtAuthGuard, AdminGuard],
+  providers: [AuthService, JwtStrategy, JwtAuthGuard, AdminGuard, CheckinGuard],
+  exports: [JwtAuthGuard, AdminGuard, CheckinGuard],
 })
 export class AuthModule {}

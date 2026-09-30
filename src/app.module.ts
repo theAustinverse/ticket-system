@@ -16,6 +16,7 @@ import { UserModule } from './modules/user/user.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { AiImageModule } from './modules/ai-image/ai-image.module';
+import { CheckinModule } from './modules/checkin/checkin.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { AiImageModule } from './modules/ai-image/ai-image.module';
     AdminModule,
     ChatModule,
     AiImageModule,
+    CheckinModule,
   ],
   controllers: [AppController],
   providers: [AppService],

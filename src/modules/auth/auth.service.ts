@@ -19,6 +19,7 @@ import { VerifyRegistrationDto } from './dto/verify-registration.dto';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { CheckinLoginDto } from './dto/checkin-login.dto';
 
 const SALT_ROUNDS = 10;
 const VERIFICATION_TTL_SECONDS = 10 * 60;
@@ -35,6 +36,8 @@ const MAX_RESET_ATTEMPTS = 5;
  * used to flood someone's inbox — per-address, not per-IP, so spreading the
  * requests across many IPs doesn't get around it. */
 const PASSWORD_RESET_COOLDOWN_SECONDS = 60;
+/** A door shift outlasts the 1h user session; long enough for one event day. */
+const CHECKIN_TOKEN_TTL = '12h';
 
 /** Identical for a registered and an unregistered address on purpose — see forgotPassword. */
 const FORGOT_PASSWORD_RESPONSE = {
@@ -371,6 +374,53 @@ export class AuthService {
       email: adminUsername,
       role: 'ADMIN',
     });
+    return { accessToken };
+  }
+
+  /**
+   * Door-staff login: a second shared credential, separate from the back
+   * office's, that only CheckinGuard accepts. Several volunteers share it,
+   * so each enters their own name at login and it rides in the token onto
+   * every check-in they record.
+   *
+   * Lockout is per client IP, not global like adminLogin's. On event day a
+   * global lock is a denial of service: anyone could type five wrong
+   * passwords and stop every scanner at the door from logging in. Per-IP,
+   * a guesser only locks themselves out, and the route's own rate limit
+   * still caps how fast any one IP can try.
+   */
+  async checkinLogin(dto: CheckinLoginDto, clientIp: string) {
+    const username = process.env.CHECKIN_USERNAME;
+    const passwordHash = process.env.CHECKIN_PASSWORD_HASH;
+    if (!username || !passwordHash) {
+      throw new UnauthorizedException('Check-in login is not configured');
+    }
+
+    const attemptsKey = `checkin-login-attempts:${clientIp}`;
+    const existingAttempts = Number((await this.redis.get(attemptsKey)) ?? 0);
+    if (existingAttempts >= MAX_LOGIN_ATTEMPTS) {
+      throw new UnauthorizedException(
+        'Too many failed login attempts — please try again in a few minutes',
+      );
+    }
+
+    // Always compare, even on a username mismatch (same timing reason as adminLogin).
+    const passwordMatches = await bcrypt.compare(dto.password, passwordHash);
+    if (dto.username !== username || !passwordMatches) {
+      await this.recordFailure(attemptsKey, LOGIN_LOCKOUT_SECONDS);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    await this.redis.del(attemptsKey);
+    const accessToken = this.jwtService.sign(
+      {
+        sub: 'checkin',
+        email: username,
+        role: 'CHECKIN',
+        name: dto.staffName.trim(),
+      },
+      { expiresIn: CHECKIN_TOKEN_TTL },
+    );
     return { accessToken };
   }
 

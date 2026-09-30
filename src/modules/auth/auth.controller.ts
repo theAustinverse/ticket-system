@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -6,6 +6,7 @@ import { VerifyRegistrationDto } from './dto/verify-registration.dto';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { CheckinLoginDto } from './dto/checkin-login.dto';
 import { RateLimit } from '../anti-bot/rate-limit.decorator';
 
 @Controller('auth')
@@ -44,6 +45,13 @@ export class AuthController {
   @HttpCode(200)
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  @Post('checkin-login')
+  @RateLimit(5, 60)
+  @HttpCode(200)
+  checkinLogin(@Req() req: any, @Body() dto: CheckinLoginDto) {
+    return this.authService.checkinLogin(dto, req.ip ?? 'unknown');
   }
 
   @Post('admin-login')

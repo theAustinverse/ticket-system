@@ -54,6 +54,10 @@ describe('OrderService', () => {
         findUniqueOrThrow: jest.fn(),
       },
       $transaction: jest.fn(),
+      ticket: {
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn((args) => ({ op: 'ticket.update', args })),
+      },
       user: {
         findUnique: jest
           .fn()
@@ -91,6 +95,18 @@ describe('OrderService', () => {
       emailService,
       queueRoomService,
     );
+  });
+
+  it('creates exactly one seat per ticket, each with its own unguessable token, in the same statement as the order', async () => {
+    prisma.order.create.mockResolvedValue({ id: 'order-1' });
+
+    await service.createOrder('user-1', validGroupOrderDto);
+
+    const { tickets } = prisma.order.create.mock.calls[0][0].data;
+    const seats = tickets.create as { seatIndex: number; token: string }[];
+    expect(seats.map((t) => t.seatIndex)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(seats.every((t) => /^[0-9a-f]{32}$/.test(t.token))).toBe(true);
+    expect(new Set(seats.map((t) => t.token)).size).toBe(11);
   });
 
   it('rejects orders before the ticket type sale batch has opened', async () => {
@@ -660,11 +676,13 @@ describe('OrderService', () => {
           id: 'order-1',
           ticketType: { sessionId: 'session-1', batchId: 'batch-1' },
           transfers: [],
+          tickets: [],
         },
         {
           id: 'order-2',
           ticketType: { sessionId: 'session-1', batchId: 'batch-2' },
           transfers: [],
+          tickets: [],
         },
       ]);
       prisma.saleBatch = {
@@ -677,6 +695,43 @@ describe('OrderService', () => {
 
       expect(result.find((o: any) => o.id === 'order-1')?.isFirstWave).toBe(true);
       expect(result.find((o: any) => o.id === 'order-2')?.isFirstWave).toBe(false);
+    });
+  });
+
+  describe('listMyOrders seats', () => {
+    it("gives the owner one QR entry per seat, named as the door will see it, and drops the raw ticket rows", async () => {
+      prisma.saleBatch = { findMany: jest.fn().mockResolvedValue([{ id: 'batch-1' }]) };
+      prisma.order.findMany = jest.fn().mockResolvedValue([
+        {
+          id: 'order-1',
+          registrantName: '王小明',
+          mealPreference: '葷食',
+          groupLeaderName: null,
+          groupMembers: null,
+          buyingForFamily: false,
+          companions: [{ name: '王媽媽', relationship: '父母', mealPreference: '素食', note: 'n' }],
+          ticketType: {
+            sessionId: 'session-1',
+            batchId: 'batch-1',
+            fixedQuantity: null,
+            sharedStockKey: null,
+            batch: { stockSweepDone: false },
+          },
+          transfers: [],
+          tickets: [
+            { id: 't0', seatIndex: 0, token: 'a'.repeat(32), checkedInAt: null },
+            { id: 't1', seatIndex: 1, token: 'b'.repeat(32), checkedInAt: null },
+          ],
+        },
+      ]);
+
+      const [order] = await service.listMyOrders('user-1');
+
+      expect(order).not.toHaveProperty('tickets');
+      expect(order.seats).toEqual([
+        { id: 't0', seatIndex: 0, token: 'a'.repeat(32), checkedInAt: null, released: false, holder: { name: '王小明', role: 'SELF', mealPreference: '葷食' } },
+        { id: 't1', seatIndex: 1, token: 'b'.repeat(32), checkedInAt: null, released: false, holder: { name: '王媽媽', role: 'COMPANION', mealPreference: '素食' } },
+      ]);
     });
   });
 
@@ -934,6 +989,30 @@ describe('OrderService', () => {
           'session-1',
           'user-1',
         );
+      });
+
+      it("gives every seat a fresh QR token in the same transaction as the ownership change", async () => {
+        mockPendingTransfer(null);
+        prisma.ticket.findMany.mockResolvedValue([{ id: 'seat-a' }, { id: 'seat-b' }]);
+
+        await service.acceptTransfer('user-2', 'transfer-1', notice);
+
+        const ops = prisma.$transaction.mock.calls[0][0];
+        const seatOps = ops.filter((op: any) => op?.op === 'ticket.update');
+        expect(seatOps.map((op: any) => op.args.where.id)).toEqual(['seat-a', 'seat-b']);
+        const tokens = seatOps.map((op: any) => op.args.data.token);
+        expect(tokens.every((t: string) => /^[0-9a-f]{32}$/.test(t))).toBe(true);
+        expect(new Set(tokens).size).toBe(2);
+      });
+
+      it('rotates no tokens when the recipient is turned away', async () => {
+        mockPendingTransfer(11);
+        inventory.claimGroupPurchase.mockResolvedValue(false);
+
+        await expect(
+          service.acceptTransfer('user-2', 'transfer-1', notice),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.ticket.update).not.toHaveBeenCalled();
       });
 
       it('leaves claims alone entirely for a non-group order', async () => {

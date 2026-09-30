@@ -20,6 +20,12 @@ import { REFUND_CUTOFF_DAYS } from './order.constants';
 import type { GroupMember } from './types/group-member';
 import type { Companion } from './types/companion';
 import { recordOrderHistory } from './order-history';
+import {
+  isSeatReleased,
+  newTicketToken,
+  seatHolder,
+  ticketSeatsFor,
+} from '../checkin/ticket-seats';
 
 /** The leader occupies one of the fixedQuantity seats themselves. */
 function otherMembersCount(fixedQuantity: number): number {
@@ -245,6 +251,10 @@ export class OrderService {
             companions: dto.companions as unknown as object[],
             buyingForFamily: dto.buyingForFamily ?? false,
             childSeatCount: dto.childSeatCount ?? 0,
+            // Created in the same statement as the order, so there's never an
+            // order without its seats (or seats without an order) — and if
+            // this whole create fails, the stock rollback below covers both.
+            tickets: { create: ticketSeatsFor(dto.quantity) },
           },
         });
       } catch (error) {
@@ -537,16 +547,27 @@ export class OrderService {
           where: { status: 'PENDING' },
           include: { toUser: { select: { email: true } } },
         },
+        tickets: { orderBy: { seatIndex: 'asc' } },
       },
       orderBy: { createdAt: 'desc' },
     });
     return Promise.all(
-      orders.map(async (order) => ({
+      orders.map(async ({ tickets, ...order }) => ({
         ...order,
         isFirstWave: await this.isFirstWaveBatch(
           order.ticketType.sessionId,
           order.ticketType.batchId,
         ),
+        // One entry per QR code, named the way the door will see it. Only
+        // the owner reaches this, so the tokens are theirs to show or share.
+        seats: tickets.map((ticket) => ({
+          id: ticket.id,
+          seatIndex: ticket.seatIndex,
+          token: ticket.token,
+          checkedInAt: ticket.checkedInAt,
+          holder: seatHolder(order, ticket.seatIndex),
+          released: isSeatReleased(order, ticket.seatIndex),
+        })),
       })),
     );
   }
@@ -722,6 +743,15 @@ export class OrderService {
       }
     }
 
+    // Every seat gets a fresh QR token in the same transaction as the
+    // ownership change. The previous owner has seen — and may have
+    // screenshotted or forwarded — every QR on this order; without this,
+    // those old codes would still get someone through the door.
+    const seats = await this.prisma.ticket.findMany({
+      where: { orderId: transfer.orderId },
+      select: { id: true },
+    });
+
     let updatedOrder;
     try {
       [, updatedOrder] = await this.prisma.$transaction([
@@ -733,6 +763,12 @@ export class OrderService {
           where: { id: transfer.orderId },
           data: { userId },
         }),
+        ...seats.map((seat) =>
+          this.prisma.ticket.update({
+            where: { id: seat.id },
+            data: { token: newTicketToken() },
+          }),
+        ),
       ]);
     } catch (error) {
       // Ownership never moved — don't leave the recipient holding a claim

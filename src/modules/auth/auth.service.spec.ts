@@ -40,6 +40,8 @@ describe('AuthService', () => {
     delete process.env.LOAD_TEST_MODE;
     delete process.env.ADMIN_USERNAME;
     delete process.env.ADMIN_PASSWORD_HASH;
+    delete process.env.CHECKIN_USERNAME;
+    delete process.env.CHECKIN_PASSWORD_HASH;
   });
 
   describe('verifyRegistration', () => {
@@ -336,6 +338,55 @@ describe('AuthService', () => {
       ).rejects.toThrow('expired or not found');
       expect(prisma.user.update).not.toHaveBeenCalled();
       expect(redisStore.has('password-reset:me@gmail.com')).toBe(false);
+    });
+  });
+
+  describe('checkinLogin', () => {
+    const creds = { username: 'door', password: 'door-password', staffName: ' 小美 ' };
+
+    beforeEach(async () => {
+      process.env.CHECKIN_USERNAME = 'door';
+      process.env.CHECKIN_PASSWORD_HASH = await bcrypt.hash('door-password', 4);
+    });
+
+    it('refuses outright when the check-in account is not configured', async () => {
+      delete process.env.CHECKIN_PASSWORD_HASH;
+      await expect(service.checkinLogin(creds, '1.1.1.1')).rejects.toThrow(
+        'Check-in login is not configured',
+      );
+    });
+
+    it('issues a CHECKIN-role token (never ADMIN) carrying the trimmed staff name, valid for the event day', async () => {
+      await expect(service.checkinLogin(creds, '1.1.1.1')).resolves.toEqual({
+        accessToken: 'signed-jwt',
+      });
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: 'checkin', email: 'door', role: 'CHECKIN', name: '小美' },
+        { expiresIn: '12h' },
+      );
+    });
+
+    it('rejects a wrong password or username', async () => {
+      await expect(
+        service.checkinLogin({ ...creds, password: 'nope' }, '1.1.1.1'),
+      ).rejects.toThrow('Invalid credentials');
+      await expect(
+        service.checkinLogin({ ...creds, username: 'admin' }, '1.1.1.1'),
+      ).rejects.toThrow('Invalid credentials');
+    });
+
+    it('locks out only the guessing IP — other scanners at the door can still log in', async () => {
+      for (let i = 0; i < 5; i++) {
+        await expect(
+          service.checkinLogin({ ...creds, password: 'nope' }, '6.6.6.6'),
+        ).rejects.toThrow('Invalid credentials');
+      }
+      await expect(service.checkinLogin(creds, '6.6.6.6')).rejects.toThrow(
+        'Too many failed login attempts',
+      );
+      await expect(service.checkinLogin(creds, '1.1.1.1')).resolves.toEqual({
+        accessToken: 'signed-jwt',
+      });
     });
   });
 
