@@ -2,6 +2,7 @@ import type {
   CheckInResult,
   CheckinSeat,
   PublicTicket,
+  RosterTeam,
   AdminOrderRow,
   AdminTeamStat,
   AdminUser,
@@ -171,6 +172,9 @@ export const api = {
     request<CheckinSeat[]>(`/checkin/search?q=${encodeURIComponent(q)}`, {
       headers: authHeader(token),
     }),
+
+  checkinRoster: (token: string) =>
+    request<RosterTeam[]>('/checkin/roster', { headers: authHeader(token) }),
 
   checkinStats: (token: string) =>
     request<{ total: number; checkedIn: number }>('/checkin/stats', {

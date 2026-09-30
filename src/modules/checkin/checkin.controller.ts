@@ -53,6 +53,12 @@ export class CheckinController {
     return this.checkinService.search(q ?? '');
   }
 
+  @Get('roster')
+  @RateLimit(120, 60)
+  roster() {
+    return this.checkinService.roster();
+  }
+
   @Get('stats')
   @RateLimit(300, 60)
   stats() {

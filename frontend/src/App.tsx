@@ -23,6 +23,7 @@ import { AdminAiImagePage } from './pages/AdminAiImagePage';
 import { Lab3DPage } from './pages/Lab3DPage';
 import { CheckinLoginPage } from './pages/CheckinLoginPage';
 import { CheckinPage } from './pages/CheckinPage';
+import { CheckinRosterPage } from './pages/CheckinRosterPage';
 import { PublicTicketPage } from './pages/PublicTicketPage';
 import { CHECKIN_TOKEN_KEY } from './api/client';
 import { decodeJwtClaim } from './jwt';
@@ -89,6 +90,8 @@ function CheckinNavBar() {
       <span className="brand">報到系統</span>
       {token && (
         <div className="navbar-actions">
+          <Link to="/checkin">掃描</Link>
+          <Link to="/checkin/roster">名單</Link>
           <span className="hint">{staffName ?? '後台'}</span>
           <button
             className="link-button"
@@ -137,6 +140,7 @@ export function App() {
         <Route path="/t/:token" element={<PublicTicketPage />} />
         <Route path="/checkin/login" element={<CheckinLoginPage />} />
         <Route path="/checkin" element={<CheckinPage />} />
+        <Route path="/checkin/roster" element={<CheckinRosterPage />} />
         <Route path="/admin/login" element={<AdminLoginPage />} />
         <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />

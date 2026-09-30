@@ -1798,3 +1798,75 @@ button:disabled {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* ---------- check-in roster ---------- */
+.roster-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.8rem;
+  align-items: center;
+}
+
+.roster-search {
+  width: 100%;
+}
+
+.roster-team {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.roster-team-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem 0.75rem;
+  width: 100%;
+  padding: 0.8rem 1rem;
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--paper);
+  text-align: left;
+}
+
+.roster-team-head::before {
+  display: none;
+}
+
+.roster-team-head:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  background: rgba(201, 162, 39, 0.06);
+}
+
+.roster-team-name {
+  color: var(--gold-bright);
+  font-weight: 700;
+}
+
+.roster-team-count {
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.roster-pending {
+  color: var(--neon);
+}
+
+.roster-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  background: var(--void-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.roster-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+}
+
+.roster-team .checkin-results {
+  padding: 0 0.8rem 0.8rem;
+}

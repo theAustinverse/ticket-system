@@ -201,6 +201,14 @@ export interface CheckinSeat {
   team: string;
 }
 
+/** One 體系 on the door roster: every seat that can come in, filed under the buyer's team. */
+export interface RosterTeam {
+  team: string;
+  total: number;
+  checkedIn: number;
+  seats: CheckinSeat[];
+}
+
 /** The no-login share page's view of one seat. */
 export interface PublicTicket {
   holderName: string | null;

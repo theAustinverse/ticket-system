@@ -142,7 +142,7 @@ Every order has exactly `quantity` `Ticket` rows (seats `0..quantity-1`), each w
 - Check-in is a conditional write on `checkedInAt IS NULL`; keep it that way.
 - Door staff use their own login (`CHECKIN_USERNAME`/`CHECKIN_PASSWORD_HASH`, role `CHECKIN`, 12h token carrying the staff name). Only `CheckinGuard` admits it. Its lockout is per IP on purpose — a global one would let anyone lock every scanner out on event day.
 - Check-in routes carry deliberately high `@RateLimit`s: the global limiter runs before auth, so it buckets by IP alone, and every door phone shares the venue's IP.
-- Search and headcount load all orders and filter in memory (member names live in JSON). Fine for hundreds of orders.
+- Search, headcount and the per-team roster (`/checkin/roster`) load all orders and filter in memory (member names live in JSON). Fine for hundreds of orders. The roster files every seat under its order's `registrantTeam` — the same field the admin export and team stats use — since members and companions have no team of their own.
 
 ### Companions vs. group members
 

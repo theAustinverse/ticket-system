@@ -47,6 +47,16 @@ type OrderRow = Parameters<typeof seatHolder>[0] & {
   };
 };
 
+/** Team label for orders that somehow have none — never silently dropped from the roster. */
+export const UNKNOWN_TEAM = '未填寫';
+
+export interface RosterTeam {
+  team: string;
+  total: number;
+  checkedIn: number;
+  seats: SeatView[];
+}
+
 export interface SeatView {
   id: string;
   seatIndex: number;
@@ -207,6 +217,31 @@ export class CheckinService {
     return matches
       .slice(0, MAX_SEARCH_ORDERS)
       .flatMap((order) => order.tickets.map((t) => toView(order, t)));
+  }
+
+  /**
+   * Every seat that can actually come in, grouped by the order's
+   * registrantTeam — the same field the admin export and team stats use.
+   * Group members and companions don't have a team of their own, so each
+   * seat is filed under the buyer's. Cancelled orders and released seats
+   * aren't sold tickets any more and are left out, so a team's total
+   * matches what the door can really expect.
+   */
+  async roster(): Promise<RosterTeam[]> {
+    const teams = new Map<string, RosterTeam>();
+    for (const order of await this.allOrdersWithSeats()) {
+      const team = order.registrantTeam?.trim() || UNKNOWN_TEAM;
+      for (const ticket of order.tickets) {
+        const view = toView(order, ticket);
+        if (view.status !== 'VALID' && view.status !== 'CHECKED_IN') continue;
+        const entry = teams.get(team) ?? { team, total: 0, checkedIn: 0, seats: [] };
+        entry.total++;
+        if (view.status === 'CHECKED_IN') entry.checkedIn++;
+        entry.seats.push(view);
+        teams.set(team, entry);
+      }
+    }
+    return [...teams.values()];
   }
 
   /** Headcount: seats that can actually come in, and how many already have. */

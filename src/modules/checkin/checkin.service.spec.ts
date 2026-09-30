@@ -191,6 +191,35 @@ describe('CheckinService', () => {
       expect(seat.status).toBe('ORDER_NOT_ACTIVE');
     });
 
+    it('roster groups every admittable seat under the buyer\'s team, with counts, leaving out cancelled orders', async () => {
+      const roster = await service.roster();
+
+      expect(roster.map((t) => t.team)).toEqual(['子揚']);
+      const [team] = roster;
+      expect(team).toMatchObject({ total: 4, checkedIn: 1 });
+      expect(team.seats.map((s) => s.holder.name)).toEqual(['王小明', '王媽媽', '王妹妹', '陳大文']);
+      expect(team.seats.some((s) => s.status === 'ORDER_NOT_ACTIVE')).toBe(false);
+    });
+
+    it('roster files an order with no team under 未填寫 instead of dropping it, and excludes released seats', async () => {
+      const noTeam = makeOrder({ id: 'order-9', registrantTeam: '  ', companions: null, quantity: 1 });
+      const swept = makeOrder({
+        id: 'order-8',
+        registrantTeam: '維妮',
+        quantity: 2,
+        companions: null,
+        groupLeaderName: '主揪',
+        groupMembers: [{ name: '', contact: '', mealPreference: '' }],
+        ticketType: { ...makeOrder().ticketType, fixedQuantity: 2, sharedStockKey: 'pool', batch: { stockSweepDone: true } },
+      });
+      prisma.order.findMany.mockResolvedValue([withSeats(noTeam), withSeats(swept)]);
+
+      const roster = await service.roster();
+
+      expect(roster.find((t) => t.team === '未填寫')?.total).toBe(1);
+      expect(roster.find((t) => t.team === '維妮')).toMatchObject({ total: 1, checkedIn: 0 });
+    });
+
     it('headcount counts only seats that can come in, and how many have', async () => {
       await expect(service.stats()).resolves.toEqual({ total: 4, checkedIn: 1 });
     });
