@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import type { EventSummary } from '../api/types';
+import { SponsorBox } from '../components/SponsorBox';
 import eventPoster from '../assets/poster/event-poster.webp';
 
 export function EventListPage() {
@@ -58,6 +59,7 @@ export function EventListPage() {
           </li>
         )}
       </ul>
+      <SponsorBox />
     </div>
   );
 }

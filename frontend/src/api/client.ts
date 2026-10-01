@@ -1,4 +1,10 @@
 import type {
+  AdminSponsorship,
+  AdminSponsorshipList,
+  CreatedSponsorship,
+  MySponsorship,
+  SponsorshipInfo,
+  SponsorshipStatus,
   CheckInResult,
   CheckinSeat,
   PublicTicket,
@@ -179,6 +185,32 @@ export const api = {
   checkinStats: (token: string) =>
     request<{ total: number; checkedIn: number }>('/checkin/stats', {
       headers: authHeader(token),
+    }),
+
+  getSponsorshipInfo: () => request<SponsorshipInfo>('/sponsorships/info'),
+
+  createSponsorship: (authToken: string, amount: number) =>
+    request<CreatedSponsorship>('/sponsorships', {
+      method: 'POST',
+      headers: authHeader(authToken),
+      body: JSON.stringify({ amount }),
+    }),
+
+  listMySponsorships: (authToken: string) =>
+    request<MySponsorship[]>('/sponsorships/mine', {
+      headers: authHeader(authToken),
+    }),
+
+  adminListSponsorships: (authToken: string) =>
+    request<AdminSponsorshipList>('/admin/sponsorships', {
+      headers: authHeader(authToken),
+    }),
+
+  adminUpdateSponsorship: (authToken: string, id: string, status: SponsorshipStatus) =>
+    request<AdminSponsorship>(`/admin/sponsorships/${id}`, {
+      method: 'PATCH',
+      headers: authHeader(authToken),
+      body: JSON.stringify({ status }),
     }),
 
   getPublicTicket: (ticketToken: string) =>

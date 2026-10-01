@@ -29,6 +29,7 @@ model User {
   chatMessages ChatMessage[]
   transfersSent     TicketTransfer[] @relation("TransferFrom")
   transfersReceived TicketTransfer[] @relation("TransferTo")
+  sponsorships      Sponsorship[]
 }
 
 enum Role {
@@ -306,4 +307,36 @@ model Ticket {
   createdAt   DateTime  @default(now())
 
   @@unique([orderId, seatIndex])
+}
+
+/// A pledge to sponsor the admin team and creators. There is no payment
+/// gateway: the sponsor transfers the money themselves using the instructions
+/// the page shows (SPONSOR_PAYMENT_INFO), quoting `referenceCode` in the
+/// transfer memo, and an admin flips the row to RECEIVED after matching it
+/// against the bank statement. So a PENDING row only means "intends to pay".
+/// The sponsor's name/email are snapshotted and userId is SET NULL on user
+/// delete, so deleting an account never erases a record of money received.
+model Sponsorship {
+  id            String            @id @default(cuid())
+  user          User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId        String?
+  donorName     String
+  donorEmail    String
+  /// Whole NT$.
+  amount        Int
+  /// 6 digits, unique, for the sponsor to put in the transfer memo.
+  referenceCode String            @unique
+  status        SponsorshipStatus @default(PENDING)
+  createdAt     DateTime          @default(now())
+  /// Set when an admin marks it RECEIVED; cleared if they move it back.
+  confirmedAt   DateTime?
+
+  @@index([userId])
+  @@index([status, createdAt])
+}
+
+enum SponsorshipStatus {
+  PENDING
+  RECEIVED
+  CANCELLED
 }

@@ -29,6 +29,10 @@ export function AdminDashboardPage() {
           <h2>波次開賣時間管理</h2>
           <p className="hint">設定每一波的開賣／截止時間，前台會自動顯示倒數計時</p>
         </Link>
+        <Link to="/admin/sponsorships" className="admin-menu-card">
+          <h2>贊助管理</h2>
+          <p className="hint">核對轉帳、標記已收到、匯出贊助紀錄</p>
+        </Link>
         <Link to="/admin/chat" className="admin-menu-card">
           <h2>心情便利貼管理</h2>
           <p className="hint">瀏覽使用者留言、刪除不當內容</p>

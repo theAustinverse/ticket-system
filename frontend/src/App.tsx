@@ -26,6 +26,7 @@ import { CheckinPage } from './pages/CheckinPage';
 import { CheckinRosterPage } from './pages/CheckinRosterPage';
 import { PublicTicketPage } from './pages/PublicTicketPage';
 import { EntryGuidePage } from './pages/EntryGuidePage';
+import { AdminSponsorshipsPage } from './pages/AdminSponsorshipsPage';
 import { CHECKIN_TOKEN_KEY } from './api/client';
 import { decodeJwtClaim } from './jwt';
 import { useAuth } from './context/AuthContext';
@@ -150,6 +151,7 @@ export function App() {
         <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/admin/orders" element={<AdminOrdersPage />} />
         <Route path="/admin/events" element={<AdminEventsPage />} />
+        <Route path="/admin/sponsorships" element={<AdminSponsorshipsPage />} />
         <Route path="/admin/chat" element={<AdminChatPage />} />
         <Route path="/admin/ai-image" element={<AdminAiImagePage />} />
         {/* Not linked from any navbar — internal-only POC route. */}

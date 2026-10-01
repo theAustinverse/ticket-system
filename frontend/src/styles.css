@@ -1940,3 +1940,23 @@ button:disabled {
   margin: 16px 0;
   border-radius: 12px;
 }
+
+/* ---------- sponsorship box (event list) ---------- */
+.sponsor-box {
+  margin-top: 2.5rem;
+  padding: 1.4rem;
+  background: linear-gradient(160deg, rgba(92, 15, 22, 0.35), rgba(6, 4, 3, 0.7));
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+.sponsor-box h2 { margin-top: 0; color: var(--gold); }
+.sponsor-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.sponsor-option.is-selected { outline: 2px solid var(--gold); outline-offset: 2px; }
+.sponsor-custom { display: block; margin-bottom: 1rem; }
+.sponsor-code strong { font-size: 1.6rem; letter-spacing: 0.15em; color: var(--gold); }
+.sponsor-payment { white-space: pre-wrap; word-break: break-word; font-family: inherit; }

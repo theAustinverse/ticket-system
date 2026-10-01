@@ -295,3 +295,40 @@ export interface AdminTeamStat {
   percentage: number;
   rank: number;
 }
+
+export type SponsorshipStatus = 'PENDING' | 'RECEIVED' | 'CANCELLED';
+
+export interface SponsorshipInfo {
+  presets: number[];
+  minAmount: number;
+  maxAmount: number;
+  paymentInfo: string | null;
+}
+
+export interface MySponsorship {
+  id: string;
+  amount: number;
+  referenceCode: string;
+  status: SponsorshipStatus;
+  createdAt: string;
+}
+
+export interface CreatedSponsorship extends MySponsorship {
+  paymentInfo: string | null;
+}
+
+export interface AdminSponsorship extends MySponsorship {
+  donorName: string;
+  donorEmail: string;
+  confirmedAt: string | null;
+}
+
+export interface AdminSponsorshipList {
+  totals: {
+    received: number;
+    pending: number;
+    receivedCount: number;
+    pendingCount: number;
+  };
+  sponsorships: AdminSponsorship[];
+}
