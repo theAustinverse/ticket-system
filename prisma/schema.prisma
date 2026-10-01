@@ -330,6 +330,11 @@ model Sponsorship {
   createdAt     DateTime          @default(now())
   /// Set when an admin marks it RECEIVED; cleared if they move it back.
   confirmedAt   DateTime?
+  /// Set when the sponsor, after transferring, typed the reference code back
+  /// to say "I paid and put this code in the memo". The app can't see the
+  /// bank memo, so this is the only enforceable form of "must quote the
+  /// code": it's a claim to check against the statement, not proof of payment.
+  reportedAt    DateTime?
 
   @@index([userId])
   @@index([status, createdAt])

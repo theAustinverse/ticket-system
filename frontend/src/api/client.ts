@@ -196,6 +196,13 @@ export const api = {
       body: JSON.stringify({ amount }),
     }),
 
+  reportSponsorship: (authToken: string, id: string, referenceCode: string) =>
+    request<MySponsorship>(`/sponsorships/${id}/report`, {
+      method: 'POST',
+      headers: authHeader(authToken),
+      body: JSON.stringify({ referenceCode }),
+    }),
+
   listMySponsorships: (authToken: string) =>
     request<MySponsorship[]>('/sponsorships/mine', {
       headers: authHeader(authToken),

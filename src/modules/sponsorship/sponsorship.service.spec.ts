@@ -22,6 +22,7 @@ describe('SponsorshipService', () => {
         })),
         findMany: jest.fn(),
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         update: jest.fn(),
       },
     };
@@ -74,6 +75,45 @@ describe('SponsorshipService', () => {
     it('does not swallow other database errors', async () => {
       prisma.sponsorship.create.mockRejectedValue(new Error('db down'));
       await expect(service.create('u1', 50)).rejects.toThrow('db down');
+    });
+  });
+
+  describe('report', () => {
+    const row = { id: 's1', userId: 'u1', amount: 100, referenceCode: '123456', status: 'PENDING', createdAt: new Date(), reportedAt: null };
+
+    it("stamps reportedAt when the typed code matches, scoped to the caller's own pledge", async () => {
+      prisma.sponsorship.findFirst.mockResolvedValue(row);
+      prisma.sponsorship.update.mockResolvedValue({ ...row, reportedAt: new Date() });
+
+      const res = await service.report('u1', 's1', '123456');
+
+      expect(prisma.sponsorship.findFirst).toHaveBeenCalledWith({ where: { id: 's1', userId: 'u1' } });
+      expect(prisma.sponsorship.update.mock.calls[0][0].data.reportedAt).toBeInstanceOf(Date);
+      expect(res.reportedAt).toBeInstanceOf(Date);
+    });
+
+    it('refuses a wrong code and writes nothing', async () => {
+      prisma.sponsorship.findFirst.mockResolvedValue(row);
+      await expect(service.report('u1', 's1', '000000')).rejects.toThrow(BadRequestException);
+      expect(prisma.sponsorship.update).not.toHaveBeenCalled();
+    });
+
+    it("404s on someone else's pledge", async () => {
+      prisma.sponsorship.findFirst.mockResolvedValue(null);
+      await expect(service.report('u2', 's1', '123456')).rejects.toThrow(NotFoundException);
+    });
+
+    it('refuses a pledge that is no longer PENDING', async () => {
+      prisma.sponsorship.findFirst.mockResolvedValue({ ...row, status: 'RECEIVED' });
+      await expect(service.report('u1', 's1', '123456')).rejects.toThrow(BadRequestException);
+    });
+
+    it('is idempotent: a repeat report keeps the first timestamp', async () => {
+      const first = new Date('2026-10-01');
+      prisma.sponsorship.findFirst.mockResolvedValue({ ...row, reportedAt: first });
+      const res = await service.report('u1', 's1', '123456');
+      expect(prisma.sponsorship.update).not.toHaveBeenCalled();
+      expect(res.reportedAt).toBe(first);
     });
   });
 

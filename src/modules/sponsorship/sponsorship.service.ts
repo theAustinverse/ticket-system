@@ -64,6 +64,30 @@ export class SponsorshipService {
     throw new BadRequestException('系統忙碌中，請稍後再試一次');
   }
 
+  /**
+   * The sponsor says they've transferred and quoted the code. Requiring the
+   * code to be typed back is what makes them read it before they go to the
+   * bank app; it's checked against the pledge so a wrong code is refused.
+   * Idempotent: a second report keeps the first timestamp.
+   */
+  async report(userId: string, id: string, referenceCode: string) {
+    const row = await this.prisma.sponsorship.findFirst({ where: { id, userId } });
+    if (!row) throw new NotFoundException('Sponsorship not found');
+    if (row.referenceCode !== referenceCode) {
+      throw new BadRequestException('對帳碼不正確，請核對後重新輸入');
+    }
+    if (row.status !== 'PENDING') {
+      throw new BadRequestException('這筆贊助已處理完成，不需要再回報');
+    }
+    const updated = row.reportedAt
+      ? row
+      : await this.prisma.sponsorship.update({
+          where: { id },
+          data: { reportedAt: new Date() },
+        });
+    return this.toMine(updated);
+  }
+
   async listMine(userId: string) {
     const rows = await this.prisma.sponsorship.findMany({
       where: { userId },
@@ -107,6 +131,7 @@ export class SponsorshipService {
     referenceCode: string;
     status: string;
     createdAt: Date;
+    reportedAt?: Date | null;
   }) {
     return {
       id: r.id,
@@ -114,6 +139,7 @@ export class SponsorshipService {
       referenceCode: r.referenceCode,
       status: r.status,
       createdAt: r.createdAt,
+      reportedAt: r.reportedAt ?? null,
     };
   }
 }

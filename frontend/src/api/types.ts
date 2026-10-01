@@ -311,6 +311,7 @@ export interface MySponsorship {
   referenceCode: string;
   status: SponsorshipStatus;
   createdAt: string;
+  reportedAt: string | null;
 }
 
 export interface CreatedSponsorship extends MySponsorship {

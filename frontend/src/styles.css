@@ -1960,3 +1960,10 @@ button:disabled {
 .sponsor-custom { display: block; margin-bottom: 1rem; }
 .sponsor-code strong { font-size: 1.6rem; letter-spacing: 0.15em; color: var(--gold); }
 .sponsor-payment { white-space: pre-wrap; word-break: break-word; font-family: inherit; }
+.sponsor-warn {
+  padding: 0.7rem 0.9rem;
+  border: 2px solid var(--gold);
+  background: rgba(92, 15, 22, 0.55);
+  font-size: 1.1rem;
+  font-weight: 700;
+}

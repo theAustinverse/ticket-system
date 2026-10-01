@@ -21,7 +21,7 @@ function csvCell(v: string | number): string {
 }
 
 function exportCsv(rows: AdminSponsorship[]) {
-  const head = ['時間', '贊助者', 'Email', '金額', '對帳碼', '狀態', '確認時間'];
+  const head = ['時間', '贊助者', 'Email', '金額', '對帳碼', '狀態', '轉帳回報時間', '確認時間'];
   const lines = rows.map((r) =>
     [
       new Date(r.createdAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
@@ -30,6 +30,9 @@ function exportCsv(rows: AdminSponsorship[]) {
       r.amount,
       r.referenceCode,
       STATUS_LABEL[r.status],
+      r.reportedAt
+        ? new Date(r.reportedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
+        : '',
       r.confirmedAt
         ? new Date(r.confirmedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
         : '',
@@ -99,7 +102,7 @@ export function AdminSponsorshipsPage() {
         待核對 NT$ {totals.pending.toLocaleString()}（{totals.pendingCount} 筆）
       </p>
       <p className="hint">
-        贊助者自行轉帳，備註填對帳碼。對帳單上看到款項後，再按「標記已收到」；「已收到」才會計入金額。
+        贊助者自行轉帳，備註填對帳碼。「轉帳回報」是贊助者說自己已轉帳（尚未回報不代表沒轉）。對帳單上看到款項後，再按「標記已收到」；「已收到」才會計入金額。
       </p>
       <button type="button" onClick={() => exportCsv(sponsorships)} disabled={sponsorships.length === 0}>
         匯出 CSV
@@ -114,6 +117,7 @@ export function AdminSponsorshipsPage() {
               <th>金額</th>
               <th>對帳碼</th>
               <th>狀態</th>
+              <th>轉帳回報</th>
               <th></th>
             </tr>
           </thead>
@@ -129,6 +133,11 @@ export function AdminSponsorshipsPage() {
                 <td>NT$ {r.amount.toLocaleString()}</td>
                 <td>{r.referenceCode}</td>
                 <td>{STATUS_LABEL[r.status]}</td>
+                <td>
+                  {r.reportedAt
+                    ? new Date(r.reportedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
+                    : '—'}
+                </td>
                 <td>
                   {r.status !== 'RECEIVED' && (
                     <button disabled={busyId === r.id} onClick={() => setStatus(r.id, 'RECEIVED')}>

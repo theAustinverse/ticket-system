@@ -13,6 +13,7 @@ import { AdminGuard } from '../auth/admin.guard';
 import { RateLimit } from '../anti-bot/rate-limit.decorator';
 import { SponsorshipService } from './sponsorship.service';
 import { CreateSponsorshipDto } from './dto/create-sponsorship.dto';
+import { ReportSponsorshipDto } from './dto/report-sponsorship.dto';
 import { UpdateSponsorshipStatusDto } from './dto/update-sponsorship-status.dto';
 
 @Controller('sponsorships')
@@ -29,6 +30,13 @@ export class SponsorshipController {
   @RateLimit(5, 60)
   create(@Req() req: any, @Body() dto: CreateSponsorshipDto) {
     return this.service.create(req.user.userId, dto.amount);
+  }
+
+  @Post(':id/report')
+  @UseGuards(JwtAuthGuard)
+  @RateLimit(10, 60)
+  report(@Req() req: any, @Param('id') id: string, @Body() dto: ReportSponsorshipDto) {
+    return this.service.report(req.user.userId, id, dto.referenceCode);
   }
 
   @Get('mine')

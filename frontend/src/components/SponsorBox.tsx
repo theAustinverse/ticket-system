@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import type { CreatedSponsorship, SponsorshipInfo } from '../api/types';
+import type { MySponsorship, SponsorshipInfo } from '../api/types';
 
 /** Sentinel for the 4th option; the three presets are plain numbers. */
 const CUSTOM = 'custom';
@@ -19,11 +19,26 @@ export function SponsorBox() {
   const [custom, setCustom] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<CreatedSponsorship | null>(null);
+  const [created, setCreated] = useState<MySponsorship | null>(null);
+  const [typedCode, setTypedCode] = useState('');
+  const [reported, setReported] = useState(false);
 
   useEffect(() => {
     api.getSponsorshipInfo().then(setInfo).catch(() => setInfo(null));
   }, []);
+
+  // Someone who picked an amount, then left before paying, gets their code
+  // back instead of having to start over (and burn one of their open slots).
+  useEffect(() => {
+    if (!token) return;
+    api
+      .listMySponsorships(token)
+      .then((rows) => {
+        const open = rows.find((r) => r.status === 'PENDING' && !r.reportedAt);
+        if (open) setCreated(open);
+      })
+      .catch(() => undefined);
+  }, [token]);
 
   if (!info) return null;
 
@@ -47,31 +62,83 @@ export function SponsorBox() {
     }
   }
 
-  if (created) {
+  function reset() {
+    setCreated(null);
+    setChoice(null);
+    setCustom('');
+    setTypedCode('');
+    setReported(false);
+    setError(null);
+  }
+
+  async function report() {
+    if (!token || !created) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.reportSponsorship(token, created.id, typedCode);
+      setReported(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '送出失敗，請稍後再試');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (created && reported) {
     return (
       <section className="sponsor-box">
         <h2>謝謝你的支持！</h2>
         <p>
-          你選擇贊助 <strong>NT$ {created.amount.toLocaleString()}</strong>。請依下方方式轉帳，
-          <strong>轉帳備註請填對帳碼</strong>，行政組收到後會確認。
+          已通知行政組。收到 <strong>NT$ {created.amount.toLocaleString()}</strong> 並核對對帳碼{' '}
+          <strong>{created.referenceCode}</strong> 後會確認。
+        </p>
+        <button type="button" onClick={reset}>
+          再贊助一筆
+        </button>
+      </section>
+    );
+  }
+
+  if (created) {
+    return (
+      <section className="sponsor-box">
+        <h2>最後一步：轉帳</h2>
+        <p>
+          你選擇贊助 <strong>NT$ {created.amount.toLocaleString()}</strong>，請依下方資訊轉帳。
+        </p>
+        <p className="sponsor-warn">
+          轉帳備註一定要填這組對帳碼，行政組才知道是你轉的！
         </p>
         <p className="sponsor-code">
           對帳碼 <strong>{created.referenceCode}</strong>
         </p>
-        {created.paymentInfo ? (
-          <pre className="sponsor-payment">{created.paymentInfo}</pre>
+        {info.paymentInfo ? (
+          <pre className="sponsor-payment">{info.paymentInfo}</pre>
         ) : (
-          <p className="hint">收款方式將由行政組另行公告，你的贊助意願已記錄。</p>
+          <p className="hint">收款方式將由行政組另行公告。</p>
         )}
+        <label className="sponsor-custom">
+          轉帳完成後，請輸入你在備註填寫的對帳碼，才能送出
+          <input
+            type="text"
+            inputMode="numeric"
+            maxLength={6}
+            value={typedCode}
+            onChange={(e) => setTypedCode(e.target.value.replace(/\D/g, ''))}
+            placeholder="6 位數對帳碼"
+          />
+        </label>
+        {error && <p className="error">{error}</p>}
         <button
           type="button"
-          onClick={() => {
-            setCreated(null);
-            setChoice(null);
-            setCustom('');
-          }}
+          disabled={typedCode !== created.referenceCode || submitting}
+          onClick={report}
         >
-          再贊助一筆
+          {submitting ? '送出中…' : '我已轉帳，送出'}
+        </button>{' '}
+        <button type="button" className="link-button" onClick={reset}>
+          先不贊助了
         </button>
       </section>
     );
