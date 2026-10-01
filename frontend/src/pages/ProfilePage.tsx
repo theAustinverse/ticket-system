@@ -29,14 +29,16 @@ export function ProfilePage() {
     api
       .getProfile(token)
       .then((profile) => {
+        // A team that's no longer in the list counts as unset, so the person is asked to pick again.
+        const validTeam = profile.team && TEAM_OPTIONS.includes(profile.team) ? profile.team : '';
         const isComplete = !!(
           profile.name &&
-          profile.team &&
+          validTeam &&
           profile.lineId &&
           profile.phone
         );
         setName(profile.name ?? '');
-        setTeam(profile.team ?? '');
+        setTeam(validTeam);
         setLineId(profile.lineId ?? '');
         setPhone(profile.phone ?? '');
         // A profile that's already complete opens in view mode; an

@@ -154,6 +154,10 @@ Two independent surfaces. `AuthModule` issues JWTs for real user accounts (`JwtA
 
 Password reset (`forgotPassword`/`resetPassword` in `AuthService`) emails a 6-digit code held in Redis, mirroring registration verification. Two properties are deliberate: `forgotPassword` answers identically whether or not the address is registered (and doesn't await the email), so it can't be used to enumerate accounts — don't "helpfully" add a not-found error or surface a mail failure; and the wrong-guess counter is *not* reset when a new code is issued, so requesting codes can't buy more guesses. JWTs are stateless, so a reset does not revoke sessions already issued (up to `JWT_EXPIRES_IN`).
 
+### Teams (體系)
+
+`Order.registrantTeam` and `User.team` are free strings in the DB, but the API only accepts values in `TEAM_OPTIONS` (`src/common/team-options.ts`, must equal `frontend/src/constants.ts` — a spec enforces it). Renaming or removing a team is a **data migration too**: old orders/profiles keep the old name and show up as a separate team in the back office (the 米克 → 爾森 rename skipped this). Update both tables in the same release.
+
 ### Frontend
 
 Plain CSS, no framework — a 1920s Hong Kong casino gold/red theme driven by custom properties in `frontend/src/styles.css` (`--void`, `--gold`, `--paper`). Match the palette rather than introducing ad hoc colors. All API calls go through the typed client in `frontend/src/api/client.ts`; add endpoints there instead of calling `fetch` from a page. User-facing and `/admin/*` routes are split in `App.tsx` with separate nav bars and separate auth contexts.

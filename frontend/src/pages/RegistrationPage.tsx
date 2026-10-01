@@ -120,12 +120,12 @@ export function RegistrationPage() {
     api
       .getProfile(token)
       .then((profile) => {
-        if (!profile.name || !profile.team || !profile.lineId || !profile.phone) {
+        if (!profile.name || !TEAM_OPTIONS.includes(profile.team ?? '') || !profile.lineId || !profile.phone) {
           navigate('/profile', { state: { from: `/register/${ticketTypeId}` } });
           return;
         }
         setRegistrantName(profile.name);
-        setRegistrantTeam(profile.team);
+        setRegistrantTeam(profile.team ?? '');
         setRegistrantLineId(profile.lineId);
         setRegistrantPhone(profile.phone);
         setProfileLoaded(true);

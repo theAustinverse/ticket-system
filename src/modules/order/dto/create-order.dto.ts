@@ -14,6 +14,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { TEAM_MESSAGE, TEAM_OPTIONS } from '../../../common/team-options';
 
 export class GroupMemberDto {
   @IsString()
@@ -69,8 +70,7 @@ export class CreateOrderDto {
   registrantName: string;
 
   @IsString()
-  @MinLength(1)
-  @MaxLength(100)
+  @IsIn(TEAM_OPTIONS as string[], { message: TEAM_MESSAGE })
   registrantTeam: string;
 
   @IsString()

@@ -1,4 +1,5 @@
-import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsString, Matches, MaxLength, MinLength, IsIn } from 'class-validator';
+import { TEAM_MESSAGE, TEAM_OPTIONS } from '../../../common/team-options';
 
 export class UpdateProfileDto {
   @IsString()
@@ -7,8 +8,7 @@ export class UpdateProfileDto {
   name: string;
 
   @IsString()
-  @MinLength(1)
-  @MaxLength(100)
+  @IsIn(TEAM_OPTIONS as string[], { message: TEAM_MESSAGE })
   team: string;
 
   @IsString()

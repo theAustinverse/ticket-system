@@ -11,7 +11,9 @@ import {
   Min,
   MinLength,
   ValidateNested,
+  IsIn,
 } from 'class-validator';
+import { TEAM_MESSAGE, TEAM_OPTIONS } from '../../../common/team-options';
 import { CompanionDto } from './create-order.dto';
 
 /**
@@ -28,8 +30,7 @@ export class UpdateRegistrantInfoDto {
   registrantName: string;
 
   @IsString()
-  @MinLength(1)
-  @MaxLength(100)
+  @IsIn(TEAM_OPTIONS as string[], { message: TEAM_MESSAGE })
   registrantTeam: string;
 
   @IsString()
