@@ -48,6 +48,12 @@ export function CheckinPage() {
   const scannerRef = useRef<QrScannerType | null>(null);
   const handlingRef = useRef(false);
   const lastRef = useRef<{ token: string; at: number } | null>(null);
+  // The QR whose result is on screen right now. The same code is usually
+  // still in front of the camera after it's been handled, and re-reading it
+  // would swap a green 報到成功 for a red 已經報到過 a few seconds later —
+  // which reads at the door as "it failed, scan again". Ignore that code
+  // until staff tap 下一位.
+  const shownTokenRef = useRef<string | null>(null);
   const quickRef = useRef(quickMode);
   quickRef.current = quickMode;
   // While someone valid is on screen waiting for 確認報到, a second code
@@ -95,6 +101,7 @@ export function CheckinPage() {
     async (text: string) => {
       if (!token || handlingRef.current || awaitingConfirmRef.current) return;
       const ticketToken = parseScannedToken(text);
+      if (ticketToken && ticketToken === shownTokenRef.current) return;
       const last = lastRef.current;
       if (ticketToken && last && last.token === ticketToken && Date.now() - last.at < REPEAT_IGNORE_MS) return;
 
@@ -105,6 +112,7 @@ export function CheckinPage() {
           return;
         }
         lastRef.current = { token: ticketToken, at: Date.now() };
+        shownTokenRef.current = ticketToken;
         const seat = await api.checkinScan(token, ticketToken);
         if (quickRef.current && seat.status === 'VALID') {
           await doCheckIn(seat);
@@ -161,6 +169,15 @@ export function CheckinPage() {
           : '無法啟動相機，請改用下方手動查詢',
       );
     }
+  }
+
+  function nextPerson() {
+    // Give the code that was just handled a short grace period: if it's
+    // still in view when 下一位 is tapped, it comes back as 已經報到過 —
+    // correct, but only after the staff member has moved on deliberately.
+    if (shownTokenRef.current) lastRef.current = { token: shownTokenRef.current, at: Date.now() };
+    shownTokenRef.current = null;
+    setOutcome(null);
   }
 
   function stopCamera() {
@@ -262,7 +279,7 @@ export function CheckinPage() {
               </div>
             </>
           )}
-          <button className="link-button" onClick={() => setOutcome(null)}>
+          <button className="link-button" onClick={nextPerson}>
             下一位
           </button>
         </div>
