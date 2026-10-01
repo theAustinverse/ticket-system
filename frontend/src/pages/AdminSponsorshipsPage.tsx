@@ -87,6 +87,24 @@ export function AdminSponsorshipsPage() {
     }
   }
 
+  async function handleDelete(r: AdminSponsorship) {
+    if (!token) return;
+    const warn =
+      r.status === 'RECEIVED'
+        ? `這筆已標記為「已收到」NT$ ${r.amount.toLocaleString()}，刪除後會從總額扣除且無法復原。確定要刪除嗎？`
+        : `確定要刪除這筆贊助（${r.donorName}，NT$ ${r.amount.toLocaleString()}）嗎？無法復原。`;
+    if (!confirm(warn)) return;
+    setBusyId(r.id);
+    try {
+      await api.adminDeleteSponsorship(token, r.id);
+      await load(token);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '刪除失敗');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (error) return <div className="page error">{error}</div>;
   if (!data) return <div className="page">載入中…</div>;
 
@@ -153,7 +171,10 @@ export function AdminSponsorshipsPage() {
                     <button disabled={busyId === r.id} onClick={() => setStatus(r.id, 'PENDING')}>
                       退回待核對
                     </button>
-                  )}
+                  )}{' '}
+                  <button disabled={busyId === r.id} onClick={() => handleDelete(r)}>
+                    刪除
+                  </button>
                 </td>
               </tr>
             ))}

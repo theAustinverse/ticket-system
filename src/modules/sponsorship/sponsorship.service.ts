@@ -125,6 +125,14 @@ export class SponsorshipService {
     });
   }
 
+  /** Hard delete. Unlike cancelling, this leaves no trace — the page warns before doing it to a RECEIVED row. */
+  async remove(id: string) {
+    const existing = await this.prisma.sponsorship.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Sponsorship not found');
+    await this.prisma.sponsorship.delete({ where: { id } });
+    return { deleted: true };
+  }
+
   private toMine(r: {
     id: string;
     amount: number;

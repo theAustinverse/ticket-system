@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -59,5 +60,10 @@ export class AdminSponsorshipController {
   @Patch(':id')
   updateStatus(@Param('id') id: string, @Body() dto: UpdateSponsorshipStatusDto) {
     return this.service.updateStatus(id, dto.status);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.service.remove(id);
   }
 }

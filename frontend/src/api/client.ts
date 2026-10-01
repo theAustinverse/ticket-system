@@ -220,6 +220,12 @@ export const api = {
       body: JSON.stringify({ status }),
     }),
 
+  adminDeleteSponsorship: (authToken: string, id: string) =>
+    request<{ deleted: boolean }>(`/admin/sponsorships/${id}`, {
+      method: 'DELETE',
+      headers: authHeader(authToken),
+    }),
+
   getPublicTicket: (ticketToken: string) =>
     request<PublicTicket>(`/tickets/${encodeURIComponent(ticketToken)}`),
 

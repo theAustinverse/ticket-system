@@ -24,6 +24,7 @@ describe('SponsorshipService', () => {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
         update: jest.fn(),
+        delete: jest.fn().mockResolvedValue(undefined),
       },
     };
     service = new SponsorshipService(prisma);
@@ -132,6 +133,20 @@ describe('SponsorshipService', () => {
     it('throws NotFoundException for a missing row', async () => {
       prisma.sponsorship.findUnique.mockResolvedValue(null);
       await expect(service.updateStatus('x', 'RECEIVED')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('remove', () => {
+    it('deletes an existing row', async () => {
+      prisma.sponsorship.findUnique.mockResolvedValue({ id: 's1' });
+      expect(await service.remove('s1')).toEqual({ deleted: true });
+      expect(prisma.sponsorship.delete).toHaveBeenCalledWith({ where: { id: 's1' } });
+    });
+
+    it('throws NotFoundException for a missing row and deletes nothing', async () => {
+      prisma.sponsorship.findUnique.mockResolvedValue(null);
+      await expect(service.remove('x')).rejects.toThrow(NotFoundException);
+      expect(prisma.sponsorship.delete).not.toHaveBeenCalled();
     });
   });
 
