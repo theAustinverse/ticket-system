@@ -1931,3 +1931,12 @@ button:disabled {
   height: 100%;
   background: var(--gold);
 }
+
+/* Entry guide page: long walkthrough images, full width of the column */
+.entry-guide img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 16px 0;
+  border-radius: 12px;
+}

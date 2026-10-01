@@ -25,6 +25,7 @@ import { CheckinLoginPage } from './pages/CheckinLoginPage';
 import { CheckinPage } from './pages/CheckinPage';
 import { CheckinRosterPage } from './pages/CheckinRosterPage';
 import { PublicTicketPage } from './pages/PublicTicketPage';
+import { EntryGuidePage } from './pages/EntryGuidePage';
 import { CHECKIN_TOKEN_KEY } from './api/client';
 import { decodeJwtClaim } from './jwt';
 import { useAuth } from './context/AuthContext';
@@ -45,6 +46,7 @@ function NavBar() {
           <button className="link-button tour-launch" onClick={() => start()}>
             📖 使用教學
           </button>
+          <Link to="/entry-guide">🧸 入場教學</Link>
           <Link to="/my-tickets">我的票卷</Link>
           <Link to="/profile">設定</Link>
           <button className="link-button" onClick={logout}>
@@ -53,6 +55,7 @@ function NavBar() {
         </div>
       ) : (
         <div className="navbar-actions">
+          <Link to="/entry-guide">🧸 入場教學</Link>
           <Link to="/login">登入</Link>
           <Link to="/login" state={{ mode: 'register' }}>
             註冊
@@ -137,6 +140,7 @@ export function App() {
         <Route path="/queue/:ticketTypeId" element={<QueuePage />} />
         <Route path="/order/:ticketTypeId" element={<OrderPage />} />
         <Route path="/orders/:orderId" element={<OrderStatusPage />} />
+        <Route path="/entry-guide" element={<EntryGuidePage />} />
         <Route path="/t/:token" element={<PublicTicketPage />} />
         <Route path="/checkin/login" element={<CheckinLoginPage />} />
         <Route path="/checkin" element={<CheckinPage />} />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { PublicTicket } from '../api/types';
 import { TicketQr } from '../components/TicketQr';
@@ -68,6 +68,9 @@ export function PublicTicketPage() {
       ) : (
         <p className="error">{SEAT_STATUS_LABEL[ticket.status]}</p>
       )}
+      <p className="hint">
+        <Link to="/entry-guide">不知道怎麼入場？看多比的入場教學</Link>
+      </p>
     </div>
   );
 }
