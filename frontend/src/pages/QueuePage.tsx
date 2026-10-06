@@ -4,7 +4,9 @@ import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import type { RegistrationInfo } from '../api/types';
 import { Icon3D } from '../components/Icon3D';
-import alleyClip from '../assets/anim/alley.mp4';
+import alleyLand from '../assets/anim/alley-l.mp4';
+import alleyPort from '../assets/anim/alley-p.mp4';
+import { currentOrientation } from '../transitions/clips';
 import { motionAllowed } from '../transitions/motion';
 
 const POLL_INTERVAL_MS = 2500;
@@ -102,7 +104,7 @@ export function QueuePage() {
           {motionAllowed() && (
             <video
               className="queue-bg"
-              src={alleyClip}
+              src={currentOrientation() === 'port' ? alleyPort : alleyLand}
               autoPlay
               loop
               muted

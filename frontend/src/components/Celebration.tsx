@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import fireworks from '../assets/anim/fireworks.mp4';
+import fireworksLand from '../assets/anim/fireworks-l.mp4';
+import fireworksPort from '../assets/anim/fireworks-p.mp4';
+import { currentOrientation } from '../transitions/clips';
 import { motionAllowed } from '../transitions/motion';
 
 /**
@@ -37,7 +39,7 @@ export function Celebration({ onceKey }: { onceKey: string }) {
     <video
       ref={ref}
       className="celebration"
-      src={fireworks}
+      src={currentOrientation() === 'port' ? fireworksPort : fireworksLand}
       autoPlay
       muted
       playsInline
