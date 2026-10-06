@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { CinematicBackground } from './components/CinematicBackground';
 import { Prologue } from './components/Prologue';
@@ -6,33 +7,40 @@ import { ChatWidget } from './components/ChatWidget';
 import { LoginPage } from './pages/LoginPage';
 import { EventListPage } from './pages/EventListPage';
 import { EventDetailPage } from './pages/EventDetailPage';
-import { TrailerPage } from './pages/TrailerPage';
 import { RegistrationPage } from './pages/RegistrationPage';
 import { QueuePage } from './pages/QueuePage';
 import { OrderPage } from './pages/OrderPage';
 import { OrderStatusPage } from './pages/OrderStatusPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { MyTicketsPage } from './pages/MyTicketsPage';
-import { AdminLoginPage } from './pages/AdminLoginPage';
-import { AdminDashboardPage } from './pages/AdminDashboardPage';
-import { AdminUsersPage } from './pages/AdminUsersPage';
-import { AdminOrdersPage } from './pages/AdminOrdersPage';
-import { AdminEventsPage } from './pages/AdminEventsPage';
-import { AdminChatPage } from './pages/AdminChatPage';
-import { AdminAiImagePage } from './pages/AdminAiImagePage';
-import { Lab3DPage } from './pages/Lab3DPage';
-import { CheckinLoginPage } from './pages/CheckinLoginPage';
-import { CheckinPage } from './pages/CheckinPage';
-import { CheckinRosterPage } from './pages/CheckinRosterPage';
 import { PublicTicketPage } from './pages/PublicTicketPage';
-import { EntryGuidePage } from './pages/EntryGuidePage';
-import { AdminSponsorshipsPage } from './pages/AdminSponsorshipsPage';
 import { CHECKIN_TOKEN_KEY } from './api/client';
 import { decodeJwtClaim } from './jwt';
 import { useAuth } from './context/AuthContext';
 import { useAdminAuth } from './context/AdminAuthContext';
 import { GuidedTour } from './tour/GuidedTour';
 import { useTour } from './tour/TourProvider';
+
+// Pages that most visitors never open (back office, door scanner, 3D lab, the
+// trailer) are split into their own chunks so they don't weigh down the first
+// load — the 3D lab alone pulled three.js into the main bundle. The buyer's
+// purchase path (event list -> register -> queue -> order) stays eager on
+// purpose: a chunk fetched mid-rush would add a network round trip exactly
+// when the queue is longest.
+const TrailerPage = lazy(() => import('./pages/TrailerPage').then((m) => ({ default: m.TrailerPage })));
+const AdminLoginPage = lazy(() => import('./pages/AdminLoginPage').then((m) => ({ default: m.AdminLoginPage })));
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })));
+const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })));
+const AdminOrdersPage = lazy(() => import('./pages/AdminOrdersPage').then((m) => ({ default: m.AdminOrdersPage })));
+const AdminEventsPage = lazy(() => import('./pages/AdminEventsPage').then((m) => ({ default: m.AdminEventsPage })));
+const AdminChatPage = lazy(() => import('./pages/AdminChatPage').then((m) => ({ default: m.AdminChatPage })));
+const AdminAiImagePage = lazy(() => import('./pages/AdminAiImagePage').then((m) => ({ default: m.AdminAiImagePage })));
+const Lab3DPage = lazy(() => import('./pages/Lab3DPage').then((m) => ({ default: m.Lab3DPage })));
+const CheckinLoginPage = lazy(() => import('./pages/CheckinLoginPage').then((m) => ({ default: m.CheckinLoginPage })));
+const CheckinPage = lazy(() => import('./pages/CheckinPage').then((m) => ({ default: m.CheckinPage })));
+const CheckinRosterPage = lazy(() => import('./pages/CheckinRosterPage').then((m) => ({ default: m.CheckinRosterPage })));
+const EntryGuidePage = lazy(() => import('./pages/EntryGuidePage').then((m) => ({ default: m.EntryGuidePage })));
+const AdminSponsorshipsPage = lazy(() => import('./pages/AdminSponsorshipsPage').then((m) => ({ default: m.AdminSponsorshipsPage })));
 
 function NavBar() {
   const { token, logout } = useAuth();
@@ -129,6 +137,7 @@ export function App() {
       {!isAdminRoute && !isBareRoute && <ChatWidget />}
       {!isAdminRoute && !isBareRoute && <GuidedTour />}
       {isCheckinRoute ? <CheckinNavBar /> : isAdminRoute ? <AdminNavBar /> : <NavBar />}
+      <Suspense fallback={<div className="page">載入中…</div>}>
       <Routes>
         <Route path="/" element={<EventListPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -157,6 +166,7 @@ export function App() {
         {/* Not linked from any navbar — internal-only POC route. */}
         <Route path="/lab-3d" element={<Lab3DPage />} />
       </Routes>
+      </Suspense>
     </>
   );
 }

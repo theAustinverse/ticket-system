@@ -27,7 +27,10 @@ export function BackgroundMusic() {
         // Autoplay blocked; wait for a user gesture instead.
       });
     }
-    tryPlay();
+    // Phones refuse sound autoplay anyway, and trying would still start
+    // pulling the 3.7MB track over mobile data before the first tap. Only
+    // pointer-fine devices (desktops) get the optimistic attempt.
+    if (window.matchMedia('(pointer: fine)').matches) tryPlay();
 
     function onFirstInteraction() {
       tryPlay();
@@ -62,7 +65,7 @@ export function BackgroundMusic() {
 
   return (
     <>
-      <audio ref={audioRef} src={bgmTrack} loop />
+      <audio ref={audioRef} src={bgmTrack} loop preload="none" />
       <button
         type="button"
         className="bgm-toggle"
