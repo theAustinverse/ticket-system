@@ -3,6 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import type { Order } from '../api/types';
+import { Celebration } from '../components/Celebration';
+import { Icon3D } from '../components/Icon3D';
+import { PageLoading } from '../components/PageLoading';
 
 export function OrderStatusPage() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -26,7 +29,7 @@ export function OrderStatusPage() {
   }, [orderId, token, navigate]);
 
   if (error) return <div className="page error">{error}</div>;
-  if (!order) return <div className="page">載入中…</div>;
+  if (!order) return <PageLoading narrow />;
 
   return (
     <div className="page page-narrow">
@@ -35,7 +38,13 @@ export function OrderStatusPage() {
       <p>數量：{order.quantity} 張</p>
       <p>總金額：NT$ {order.totalAmount.toLocaleString()}</p>
       {order.status === 'PAID' && (
-        <p className="success">訂票成功！確認信已寄送到您的信箱。</p>
+        <>
+          <Celebration onceKey={`celebrated-${order.id}`} />
+          <div className="success-burst">
+            <Icon3D name="ingot" motion="pop" size={88} />
+            <p className="success">訂票成功！確認信已寄送到您的信箱。</p>
+          </div>
+        </>
       )}
       {order.status === 'CANCELLED' && (
         <p className="error">此訂單已退票</p>

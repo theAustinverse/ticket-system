@@ -3,6 +3,9 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import type { RegistrationInfo } from '../api/types';
+import { Icon3D } from '../components/Icon3D';
+import alleyClip from '../assets/anim/alley.mp4';
+import { motionAllowed } from '../transitions/motion';
 
 const POLL_INTERVAL_MS = 2500;
 
@@ -96,6 +99,17 @@ export function QueuePage() {
       )}
       {!error && (
         <div className="queue-stage">
+          {motionAllowed() && (
+            <video
+              className="queue-bg"
+              src={alleyClip}
+              autoPlay
+              loop
+              muted
+              playsInline
+              aria-hidden="true"
+            />
+          )}
           <div className="queue-embers" aria-hidden="true">
             <span className="ember" />
             <span className="ember" />
@@ -104,6 +118,7 @@ export function QueuePage() {
             <span className="ember" />
             <span className="ember" />
           </div>
+          <Icon3D name="ticket" motion="float" size={96} className="queue-ticket" />
           <div className="queue-seal">
             <p className="queue-position">
               {position !== null ? `第 ${position} 位` : '入場中…'}

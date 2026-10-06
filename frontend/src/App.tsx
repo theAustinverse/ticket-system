@@ -20,6 +20,8 @@ import { useAuth } from './context/AuthContext';
 import { useAdminAuth } from './context/AdminAuthContext';
 import { GuidedTour } from './tour/GuidedTour';
 import { useTour } from './tour/TourProvider';
+import { RouteFx, useRouteTransition } from './transitions/RouteTransition';
+import { PageLoading } from './components/PageLoading';
 
 // Pages that most visitors never open (back office, door scanner, 3D lab, the
 // trailer) are split into their own chunks so they don't weigh down the first
@@ -122,6 +124,7 @@ function CheckinNavBar() {
 
 export function App() {
   const location = useLocation();
+  const { shown, fx, done } = useRouteTransition();
   const isAdminRoute = location.pathname.startsWith('/admin');
   const isCheckinRoute = location.pathname.startsWith('/checkin');
   // A guest opening their shared ticket at the door, or a scanner phone, must
@@ -137,8 +140,8 @@ export function App() {
       {!isAdminRoute && !isBareRoute && <ChatWidget />}
       {!isAdminRoute && !isBareRoute && <GuidedTour />}
       {isCheckinRoute ? <CheckinNavBar /> : isAdminRoute ? <AdminNavBar /> : <NavBar />}
-      <Suspense fallback={<div className="page">載入中…</div>}>
-      <Routes>
+      <Suspense fallback={<PageLoading />}>
+      <Routes location={shown}>
         <Route path="/" element={<EventListPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/events" element={<EventListPage />} />
@@ -167,6 +170,7 @@ export function App() {
         <Route path="/lab-3d" element={<Lab3DPage />} />
       </Routes>
       </Suspense>
+      {fx && <RouteFx fx={fx} onDone={done} />}
     </>
   );
 }

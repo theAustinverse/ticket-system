@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import type { MySponsorship, SponsorshipInfo } from '../api/types';
+import { Icon3D } from './Icon3D';
 
 /** Sentinel for the 4th option; the three presets are plain numbers. */
 const CUSTOM = 'custom';
@@ -88,7 +89,10 @@ export function SponsorBox() {
   if (created && reported) {
     return (
       <section className="sponsor-box">
-        <h2>謝謝你的支持！</h2>
+        <div className="success-burst">
+          <Icon3D name="ingot" motion="pop" size={84} />
+          <h2>謝謝你的支持！</h2>
+        </div>
         <p>
           已通知行政組。收到 <strong>NT$ {created.amount.toLocaleString()}</strong> 並核對對帳碼{' '}
           <strong>{created.referenceCode}</strong> 後會確認。
@@ -158,6 +162,7 @@ export function SponsorBox() {
             className={`sponsor-option ${choice === n ? 'is-selected' : ''}`}
             onClick={() => setChoice(n)}
           >
+            {choice === n && <Icon3D name="mahjong" motion="flip" size={26} className="sponsor-tile" />}
             NT$ {n}
           </button>
         ))}
@@ -168,6 +173,7 @@ export function SponsorBox() {
           className={`sponsor-option ${choice === CUSTOM ? 'is-selected' : ''}`}
           onClick={() => setChoice(CUSTOM)}
         >
+          {choice === CUSTOM && <Icon3D name="mahjong" motion="flip" size={26} className="sponsor-tile" />}
           自訂金額
         </button>
       </div>

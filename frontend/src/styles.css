@@ -2002,3 +2002,134 @@ button:disabled {
 }
 
 .sponsor-box a { color: var(--gold-bright); }
+
+/* ============================================================
+   Page transitions, 3D icons and success animations
+   (src/transitions/*, src/components/Icon3D.tsx)
+   ============================================================ */
+
+/* The shot is screen-blended, so its black becomes transparent; the backdrop
+   keeps the page hidden around the peak. Cover mode blocks taps while the
+   screen is covered; reveal mode never does. */
+.route-fx {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+.route-fx[data-mode='cover'] { pointer-events: auto; }
+.route-fx-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--void);
+  opacity: 0;
+}
+.route-fx-host { position: absolute; inset: 0; }
+.route-fx-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  mix-blend-mode: screen;
+}
+/* Buffered-but-idle clips live here, out of sight. */
+.route-fx-warm {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 2px;
+  height: 2px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.celebration {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  mix-blend-mode: screen;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* 3D icons: the depth is in the artwork; a shadow seats them on the page. */
+.icon3d {
+  display: inline-block;
+  vertical-align: middle;
+  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.55));
+  user-select: none;
+  -webkit-user-drag: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .icon3d-swing { transform-origin: 50% 4%; animation: icon-swing 2.6s ease-in-out infinite; }
+  .icon3d-float { animation: icon-float 3.4s ease-in-out infinite; }
+  .icon3d-pop { animation: icon-pop 0.75s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+  .icon3d-flip { animation: icon-flip 0.55s cubic-bezier(0.3, 1.3, 0.5, 1) both; }
+}
+@keyframes icon-swing {
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(8deg); }
+}
+@keyframes icon-float {
+  0%, 100% { transform: perspective(500px) translateY(0) rotateY(-14deg) rotateX(4deg); }
+  50% { transform: perspective(500px) translateY(-8px) rotateY(14deg) rotateX(-4deg); }
+}
+@keyframes icon-pop {
+  0% { transform: scale(0) rotate(-24deg); opacity: 0; }
+  60% { transform: scale(1.18) rotate(6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes icon-flip {
+  from { transform: perspective(300px) rotateY(-180deg) scale(0.5); opacity: 0; }
+  to { transform: perspective(300px) rotateY(0) scale(1); opacity: 1; }
+}
+
+.page-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 5rem;
+  color: var(--paper-dim);
+}
+.page-loading.page-narrow { margin-top: 2rem; }
+
+.success-burst {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.success-burst .success, .success-burst h2 { margin: 0; }
+
+.title-with-icon { display: flex; align-items: center; gap: 0.6rem; }
+
+.sponsor-option { position: relative; }
+.sponsor-tile { margin-right: 0.4rem; }
+
+/* Queue page: a rainy Hong Kong alley plays dimly behind the waiting ticket. */
+.queue-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  mix-blend-mode: screen;
+  opacity: 0.4;
+  pointer-events: none;
+}
+.queue-stage > *:not(.queue-bg):not(.queue-embers) { position: relative; z-index: 1; }
+
+/* Lists come in one after another instead of all at once. */
+@media (prefers-reduced-motion: no-preference) {
+  .event-list > li { animation: rise-in 0.5s ease both; }
+  .event-list > li:nth-child(2) { animation-delay: 0.08s; }
+  .event-list > li:nth-child(3) { animation-delay: 0.16s; }
+  .event-list > li:nth-child(4) { animation-delay: 0.24s; }
+  .event-card:active, .admin-menu-card:active { transform: scale(0.985); }
+  button:active:not(:disabled) { transform: translateY(1px) scale(0.98); }
+}

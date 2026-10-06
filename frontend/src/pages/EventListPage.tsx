@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import type { EventSummary } from '../api/types';
+import { PageLoading } from '../components/PageLoading';
 import { SponsorBox } from '../components/SponsorBox';
 import eventPoster from '../assets/poster/event-poster.webp';
 
@@ -25,7 +26,7 @@ export function EventListPage() {
       });
   }, []);
 
-  if (loading) return <div className="page">載入中…</div>;
+  if (loading) return <PageLoading />;
   if (error) return <div className="page error">{error}</div>;
 
   return (

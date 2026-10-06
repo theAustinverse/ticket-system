@@ -1,3 +1,4 @@
+import { Icon3D } from '../components/Icon3D';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
@@ -479,7 +480,10 @@ export function MyTicketsPage() {
 
   return (
     <div className="page">
-      <h1>我的票卷</h1>
+      <h1 className="title-with-icon">
+        <Icon3D name="ticket" motion="float" size={44} />
+        我的票卷
+      </h1>
       {error && <p className="error">{error}</p>}
       {incomingTransfers.length > 0 && (
         <div className="my-ticket-list">
