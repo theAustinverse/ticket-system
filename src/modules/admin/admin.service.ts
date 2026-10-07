@@ -1,10 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { ChatGateway } from '../chat/chat.gateway';
 import { recordOrderHistory } from '../order/order-history';
-import { groupMemberRelationAt } from '../checkin/ticket-seats';
+import { groupMemberRelationAt, seatHolder } from '../checkin/ticket-seats';
+import { applySeatEdit, type SeatEdit } from './seat-edit';
 import type { GroupMember } from '../order/types/group-member';
 import type { Companion } from '../order/types/companion';
 
@@ -60,31 +65,61 @@ export class AdminService {
     const orders = await this.prisma.order.findMany({
       include: {
         user: { select: { id: true, email: true } },
-        ticketType: { select: { name: true } },
+        ticketType: {
+          select: {
+            name: true,
+            fixedQuantity: true,
+            sharedStockKey: true,
+            batch: { select: { stockSweepDone: true } },
+          },
+        },
+        tickets: { select: { seatIndex: true, checkedInAt: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return orders.map((order) => ({
-      id: order.id,
-      userId: order.user.id,
-      userEmail: order.user.email,
-      registrantName: order.registrantName,
-      registrantTeam: order.registrantTeam,
-      registrantLineId: order.registrantLineId,
-      registrantPhone: order.registrantPhone,
-      mealPreference: order.mealPreference,
-      ticketTypeName: order.ticketType.name,
-      quantity: order.quantity,
-      totalAmount: order.totalAmount,
-      status: order.status,
-      createdAt: order.createdAt,
-      adminNote: order.adminNote,
-      groupLeaderName: order.groupLeaderName,
-      groupLeaderLineId: order.groupLeaderLineId,
-      groupLeaderPhone: order.groupLeaderPhone,
-      groupMembers: order.groupMembers as GroupMember[] | null,
-    }));
+    return orders.map((order) => {
+      const checkedIn = new Map(
+        order.tickets.map((t) => [t.seatIndex, t.checkedInAt]),
+      );
+      // One entry per seat, resolved the same way the door and the ticket
+      // page resolve it — so the back office searches and edits exactly the
+      // people who would actually walk in.
+      const seats = Array.from({ length: order.quantity }, (_, seatIndex) => {
+        const holder = seatHolder(order, seatIndex);
+        return {
+          seatIndex,
+          name: holder.name,
+          mealPreference: holder.mealPreference,
+          relation: holder.relation,
+          role: holder.role,
+          checkedInAt: checkedIn.get(seatIndex) ?? null,
+        };
+      });
+      return {
+        id: order.id,
+        userId: order.user.id,
+        userEmail: order.user.email,
+        registrantName: order.registrantName,
+        registrantTeam: order.registrantTeam,
+        registrantLineId: order.registrantLineId,
+        registrantPhone: order.registrantPhone,
+        mealPreference: order.mealPreference,
+        ticketTypeName: order.ticketType.name,
+        quantity: order.quantity,
+        totalAmount: order.totalAmount,
+        status: order.status,
+        createdAt: order.createdAt,
+        adminNote: order.adminNote,
+        groupLeaderName: order.groupLeaderName,
+        groupLeaderLineId: order.groupLeaderLineId,
+        groupLeaderPhone: order.groupLeaderPhone,
+        groupMembers: order.groupMembers as GroupMember[] | null,
+        companions: order.companions as Companion[] | null,
+        buyingForFamily: order.buyingForFamily,
+        seats,
+      };
+    });
   }
 
   /**
@@ -135,6 +170,123 @@ export class AdminService {
     });
 
     return updated;
+  }
+
+  /**
+   * Corrects one seat's name or meal from the back office (a typo, a person
+   * who swapped in). Only the seat's own fields change — its QR token, its
+   * partner/relative mark and its contact are untouched, so a ticket already
+   * sent to the holder keeps working. The write is recorded with before/after.
+   */
+  async updateSeat(
+    orderId: string,
+    seatIndex: number,
+    edit: SeatEdit,
+    adminLabel: string,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { ticketType: { select: { fixedQuantity: true } } },
+    });
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`);
+    if (order.status === 'CANCELLED') {
+      throw new BadRequestException('已取消的訂單不能修改座位');
+    }
+
+    const { data, before, after } = applySeatEdit(order, seatIndex, edit);
+    await this.prisma.order.update({ where: { id: orderId }, data });
+
+    await recordOrderHistory(this.prisma, {
+      orderId,
+      action: 'ADMIN_SEAT_EDITED',
+      actorLabel: adminLabel,
+      before,
+      after,
+    });
+
+    return { orderId, ...after };
+  }
+
+  /**
+   * Moves a whole order to another team (體系). Team is stored once per
+   * order — group members and companions have none of their own — so this
+   * moves every seat on the order together.
+   */
+  async updateOrderTeam(orderId: string, team: string, adminLabel: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`);
+    if (order.registrantTeam === team) return { id: orderId, registrantTeam: team };
+
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { registrantTeam: team },
+    });
+
+    await recordOrderHistory(this.prisma, {
+      orderId,
+      action: 'ADMIN_TEAM_CHANGED',
+      actorLabel: adminLabel,
+      before: { registrantTeam: order.registrantTeam },
+      after: { registrantTeam: team },
+    });
+
+    return { id: orderId, registrantTeam: team };
+  }
+
+  /**
+   * Cancels (not deletes) an order: status becomes CANCELLED, the stock goes
+   * back to the pool, and the order and its history stay visible — unlike
+   * deleteOrder, which erases the row. No refund happens here; money is
+   * settled outside the system.
+   *
+   * The status flip is a conditional write (PENDING/PAID only), so a
+   * double-click can't release the same seat twice. Stock is released only
+   * after the flip committed, and the flip is undone if the release fails —
+   * the same order as the customer-facing cancel. An order with someone
+   * already checked in at the door is refused: that person has been admitted.
+   */
+  async cancelOrder(orderId: string, adminLabel: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        ticketType: true,
+        tickets: { select: { checkedInAt: true } },
+      },
+    });
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`);
+    if (!REFUNDABLE_STATUSES.includes(order.status)) {
+      throw new BadRequestException('這張訂單已經是取消狀態');
+    }
+    if (order.tickets.some((t) => t.checkedInAt)) {
+      throw new BadRequestException('這張訂單已有人現場報到，不能取消');
+    }
+
+    const { count } = await this.prisma.order.updateMany({
+      where: { id: orderId, status: { in: REFUNDABLE_STATUSES as any } },
+      data: { status: 'CANCELLED' },
+    });
+    if (count === 0) {
+      throw new BadRequestException('這張訂單已經是取消狀態');
+    }
+
+    try {
+      await this.releaseOrderStock(order);
+    } catch (error) {
+      await this.prisma.order
+        .update({ where: { id: orderId }, data: { status: order.status } })
+        .catch(() => {});
+      throw error;
+    }
+
+    await recordOrderHistory(this.prisma, {
+      orderId,
+      action: 'ADMIN_CANCELLED',
+      actorLabel: adminLabel,
+      before: { status: order.status },
+      after: { status: 'CANCELLED' },
+    });
+
+    return { id: orderId, status: 'CANCELLED' as const };
   }
 
   /** Full audit trail for one order, newest first — feeds the admin order-detail history view. */

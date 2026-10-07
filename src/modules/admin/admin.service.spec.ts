@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 
 describe('AdminService', () => {
@@ -12,6 +12,7 @@ describe('AdminService', () => {
       order: {
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         delete: jest.fn().mockResolvedValue(undefined),
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
@@ -270,6 +271,145 @@ describe('AdminService', () => {
         orderBy: { createdAt: 'desc' },
       });
       expect(result).toBe(entries);
+    });
+  });
+
+  describe('updateSeat', () => {
+    const groupOrder = {
+      id: 'o1',
+      status: 'PAID',
+      quantity: 3,
+      registrantName: '買家',
+      mealPreference: '葷食',
+      groupLeaderName: '主揪',
+      groupMembers: [{ name: '羽萱', contact: '0911', mealPreference: '葷食' }, { name: '', contact: '', mealPreference: '' }],
+      companions: null,
+      buyingForFamily: false,
+      ticketType: { fixedQuantity: 2 },
+    };
+
+    it('writes the edited member list and records ADMIN_SEAT_EDITED with before/after', async () => {
+      prisma.order.findUnique.mockResolvedValue(groupOrder);
+      prisma.order.update.mockResolvedValue({});
+
+      await service.updateSeat('o1', 1, { name: '洪羽萱' }, 'admin@x.com');
+
+      const written = prisma.order.update.mock.calls[0][0];
+      expect(written.where).toEqual({ id: 'o1' });
+      expect(written.data.groupMembers[0].name).toBe('洪羽萱');
+      expect(prisma.orderHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId: 'o1',
+          action: 'ADMIN_SEAT_EDITED',
+          actorLabel: 'admin@x.com',
+          before: { seatIndex: 1, name: '羽萱', mealPreference: '葷食' },
+          after: { seatIndex: 1, name: '洪羽萱', mealPreference: '葷食' },
+        }),
+      });
+    });
+
+    it('refuses a cancelled order and an unknown order', async () => {
+      prisma.order.findUnique.mockResolvedValue({ ...groupOrder, status: 'CANCELLED' });
+      await expect(service.updateSeat('o1', 1, { name: 'x' }, 'a')).rejects.toThrow(BadRequestException);
+      prisma.order.findUnique.mockResolvedValue(null);
+      await expect(service.updateSeat('nope', 1, { name: 'x' }, 'a')).rejects.toThrow(NotFoundException);
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateOrderTeam', () => {
+    it('changes the team and records ADMIN_TEAM_CHANGED; a no-op writes nothing', async () => {
+      prisma.order.findUnique.mockResolvedValue({ id: 'o1', registrantTeam: '朱佳期' });
+      prisma.order.update.mockResolvedValue({});
+      await service.updateOrderTeam('o1', '子揚', 'admin@x.com');
+      expect(prisma.order.update).toHaveBeenCalledWith({
+        where: { id: 'o1' },
+        data: { registrantTeam: '子揚' },
+      });
+      expect(prisma.orderHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'ADMIN_TEAM_CHANGED',
+          before: { registrantTeam: '朱佳期' },
+          after: { registrantTeam: '子揚' },
+        }),
+      });
+
+      prisma.order.update.mockClear();
+      prisma.orderHistory.create.mockClear();
+      await service.updateOrderTeam('o1', '朱佳期', 'admin@x.com');
+      expect(prisma.order.update).not.toHaveBeenCalled();
+      expect(prisma.orderHistory.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancelOrder', () => {
+    const paid = (over: object = {}) => ({
+      id: 'o1',
+      userId: 'u1',
+      status: 'PAID',
+      quantity: 1,
+      tickets: [{ checkedInAt: null }],
+      ticketType: { id: 'tt1', sessionId: 's1', fixedQuantity: null, sharedStockKey: null, maxGroupOrders: null },
+      ...over,
+    });
+
+    it('flips PAID to CANCELLED, releases stock once, keeps the row, records history', async () => {
+      prisma.order.findUnique.mockResolvedValue(paid());
+      await service.cancelOrder('o1', 'admin@x.com');
+
+      expect(prisma.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'o1', status: { in: ['PENDING', 'PAID'] } },
+        data: { status: 'CANCELLED' },
+      });
+      expect(inventory.releaseStock).toHaveBeenCalledTimes(1);
+      expect(inventory.releaseStock).toHaveBeenCalledWith('tt1', 1);
+      expect(prisma.order.delete).not.toHaveBeenCalled();
+      expect(prisma.orderHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId: 'o1',
+          action: 'ADMIN_CANCELLED',
+          actorLabel: 'admin@x.com',
+          before: { status: 'PAID' },
+          after: { status: 'CANCELLED' },
+        }),
+      });
+    });
+
+    it('releases the group claim for a group bundle', async () => {
+      prisma.order.findUnique.mockResolvedValue(
+        paid({ quantity: 11, ticketType: { id: 'tt1', sessionId: 's1', fixedQuantity: 10, sharedStockKey: 'pool', maxGroupOrders: 5 } }),
+      );
+      await service.cancelOrder('o1', 'a');
+      expect(inventory.releaseGroupStock).toHaveBeenCalledWith('pool', 'tt1', 11);
+      expect(inventory.releaseGroupPurchaseClaim).toHaveBeenCalledWith('s1', 'u1');
+    });
+
+    it('refuses an already-cancelled order and releases nothing', async () => {
+      prisma.order.findUnique.mockResolvedValue(paid({ status: 'CANCELLED' }));
+      await expect(service.cancelOrder('o1', 'a')).rejects.toThrow(BadRequestException);
+      expect(inventory.releaseStock).not.toHaveBeenCalled();
+    });
+
+    it('a lost race (status already flipped) releases nothing', async () => {
+      prisma.order.findUnique.mockResolvedValue(paid());
+      prisma.order.updateMany.mockResolvedValue({ count: 0 });
+      await expect(service.cancelOrder('o1', 'a')).rejects.toThrow(BadRequestException);
+      expect(inventory.releaseStock).not.toHaveBeenCalled();
+    });
+
+    it('refuses an order someone already checked in to', async () => {
+      prisma.order.findUnique.mockResolvedValue(paid({ tickets: [{ checkedInAt: new Date() }] }));
+      await expect(service.cancelOrder('o1', 'a')).rejects.toThrow('已有人現場報到');
+      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('restores the status if releasing stock fails', async () => {
+      prisma.order.findUnique.mockResolvedValue(paid());
+      prisma.order.update.mockResolvedValue({});
+      inventory.releaseStock.mockRejectedValue(new Error('redis down'));
+      await expect(service.cancelOrder('o1', 'a')).rejects.toThrow('redis down');
+      expect(prisma.order.update).toHaveBeenCalledWith({ where: { id: 'o1' }, data: { status: 'PAID' } });
+      expect(prisma.orderHistory.create).not.toHaveBeenCalled();
     });
   });
 });

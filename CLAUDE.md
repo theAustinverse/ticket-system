@@ -148,6 +148,13 @@ Every order has exactly `quantity` `Ticket` rows (seats `0..quantity-1`), each w
 
 Two different "extra people" models, easy to conflate. Group bundles (`fixedQuantity`) use `Order.groupMembers`, one entry per bundle seat. Multi-quantity individual tickets (`maxQuantityPerOrder`) use `Order.companions`, with `buyingForFamily` marking whether ticket #1 is the buyer's own. They have different edit cutoffs and different admin-export columns.
 
+### Back-office corrections (`AdminService`)
+
+Three admin writes exist for fixing data after the fact; all record an `OrderHistory` row with before/after, and all are covered by `admin.service.spec.ts` / `seat-edit.spec.ts`:
+- `updateSeat` → `applySeatEdit()` (`src/modules/admin/seat-edit.ts`) changes one seat's name/meal. Its seat mapping mirrors `seatHolder()` — **change one, change the other**. It never touches the QR token, the contact, or the partner/relative mark.
+- `updateOrderTeam` moves the *whole order*: team lives once on `Order.registrantTeam`, group members and companions have none of their own, so there is no per-seat team.
+- `cancelOrder` is cancel, not delete: conditional `PENDING/PAID → CANCELLED`, then `releaseOrderStock`, reverting the status if the release fails; refused once anyone on the order has checked in. It never refunds — money is settled outside the system. `deleteOrder` is the destructive one and erases the row.
+
 ### Auth
 
 Two independent surfaces. `AuthModule` issues JWTs for real user accounts (`JwtAuthGuard`). Admin back-office login is a **single shared** username/bcrypt-hash pair from env (`ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH`), not a `User` row — which is why `OrderHistory.actorUserId` is nullable and admin actions pass a label string instead. `AdminGuard` stacks on top of `JwtAuthGuard` for `/admin/*`.

@@ -266,6 +266,16 @@ export interface AdminUser {
   orders: AdminOrderSummary[];
 }
 
+/** One seat of an order as the back office sees it (resolved like the door does). */
+export interface AdminSeat {
+  seatIndex: number;
+  name: string | null;
+  mealPreference: string | null;
+  relation: string | null;
+  role: 'LEADER' | 'MEMBER' | 'SELF' | 'COMPANION';
+  checkedInAt: string | null;
+}
+
 export interface AdminOrderRow {
   id: string;
   userId: string;
@@ -286,6 +296,8 @@ export interface AdminOrderRow {
   groupLeaderPhone: string | null;
   groupMembers: GroupMember[] | null;
   companions: Companion[] | null;
+  buyingForFamily: boolean;
+  seats: AdminSeat[];
 }
 
 export interface OrderHistoryEntry {

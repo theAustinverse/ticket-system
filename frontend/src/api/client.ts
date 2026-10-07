@@ -477,6 +477,32 @@ export const api = {
       },
     ),
 
+  /** Corrects one seat's name and/or meal. Its QR code and contact are untouched. */
+  adminUpdateSeat: (
+    authToken: string,
+    orderId: string,
+    seatIndex: number,
+    edit: { name?: string; mealPreference?: string },
+  ) =>
+    request<{ orderId: string; seatIndex: number; name: string | null; mealPreference: string | null }>(
+      `/admin/orders/${orderId}/seats/${seatIndex}`,
+      { method: 'PATCH', headers: authHeader(authToken), body: JSON.stringify(edit) },
+    ),
+
+  /** Moves the whole order (every seat) to another team. */
+  adminUpdateOrderTeam: (authToken: string, orderId: string, team: string) =>
+    request<{ id: string; registrantTeam: string }>(
+      `/admin/orders/${orderId}/team`,
+      { method: 'PATCH', headers: authHeader(authToken), body: JSON.stringify({ team }) },
+    ),
+
+  /** Cancels (keeps the row, releases stock). Does not refund anything. */
+  adminCancelOrder: (authToken: string, orderId: string) =>
+    request<{ id: string; status: 'CANCELLED' }>(
+      `/admin/orders/${orderId}/cancel`,
+      { method: 'POST', headers: authHeader(authToken) },
+    ),
+
   adminGetOrderHistory: (authToken: string, id: string) =>
     request<OrderHistoryEntry[]>(`/admin/orders/${id}/history`, {
       headers: authHeader(authToken),

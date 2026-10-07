@@ -3,10 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { decodeJwtRole } from '../jwt';
+import { TEAM_OPTIONS } from '../constants';
 import type {
   AdminOrderRow,
+  AdminSeat,
   AdminTeamStat,
-  Companion,
   GroupMember,
   OrderHistoryEntry,
 } from '../api/types';
@@ -21,6 +22,9 @@ const HISTORY_ACTION_LABELS: Record<string, string> = {
   TRANSFER_REJECTED: '拒絕轉讓',
   TRANSFER_CANCELLED: '取消轉讓',
   ADMIN_NOTE_UPDATED: '後台備註',
+  ADMIN_SEAT_EDITED: '後台改座位',
+  ADMIN_TEAM_CHANGED: '後台改體系',
+  ADMIN_CANCELLED: '後台取消訂單',
   CHECKED_IN: '現場報到',
   CHECK_IN_UNDONE: '撤銷報到',
 };
@@ -31,9 +35,6 @@ function memberName(member: GroupMember | string): string {
 }
 function memberContact(member: GroupMember | string): string {
   return typeof member === 'string' ? '' : member.contact;
-}
-function memberMeal(member: GroupMember | string): string {
-  return typeof member === 'string' ? '' : member.mealPreference;
 }
 function isMemberFilled(member: GroupMember | string): boolean {
   return !!memberName(member).trim();
@@ -52,8 +53,21 @@ function companionFillStatus(row: AdminOrderRow): { filled: number; total: numbe
   return { filled, total: row.companions.length };
 }
 
+const MEAL_OPTIONS = ['葷食', '素食', '蛋奶素'];
+
+/** Same person written two ways (spaces, full-width brackets) must still collide. */
+function normalizeName(name: string | null): string {
+  return (name ?? '').replace(/[\s\u3000]/g, '').replace(/[（(].*?[）)]/g, '');
+}
+
+/** A cancelled order's seats no longer count, so they're neither duplicates nor duplicated-against. */
+function isActive(row: AdminOrderRow): boolean {
+  return row.status === 'PAID' || row.status === 'PENDING';
+}
+
 function matchesQuery(row: AdminOrderRow, query: string): boolean {
   const haystack = [
+    ...row.seats.map((seat) => seat.name),
     row.userEmail,
     row.registrantName,
     row.registrantTeam,
@@ -90,6 +104,15 @@ export function AdminOrdersPage() {
   const [historyOpen, setHistoryOpen] = useState<Set<string>>(new Set());
   const [historyData, setHistoryData] = useState<Record<string, OrderHistoryEntry[]>>({});
   const [historyLoading, setHistoryLoading] = useState<Set<string>>(new Set());
+  const [onlyDuplicates, setOnlyDuplicates] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'' | 'ACTIVE' | 'CANCELLED'>('');
+  const [seatEdit, setSeatEdit] = useState<{
+    orderId: string;
+    seatIndex: number;
+    name: string;
+    meal: string;
+  } | null>(null);
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
 
   function toggleExpanded(id: string) {
     setExpanded((prev) => {
@@ -146,8 +169,36 @@ export function AdminOrdersPage() {
     [rows],
   );
 
+  // How many *active* seats carry each name, across every order — a name
+  // seen twice is either a double purchase or a person listed under two
+  // groups, and either way someone should look at it.
+  const nameCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of rows ?? []) {
+      if (!isActive(row)) continue;
+      for (const seat of row.seats) {
+        const key = normalizeName(seat.name);
+        if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [rows]);
+
+  function isDuplicateSeat(row: AdminOrderRow, seat: AdminSeat): boolean {
+    if (!isActive(row)) return false;
+    return (nameCounts.get(normalizeName(seat.name)) ?? 0) > 1;
+  }
+
+  function duplicateCount(row: AdminOrderRow): number {
+    return row.seats.filter((seat) => isDuplicateSeat(row, seat)).length;
+  }
+
+  const duplicateOrderCount = (rows ?? []).filter((r) => duplicateCount(r) > 0).length;
+
   const visibleRows = (rows ?? [])
     .filter((r) => !teamFilter || r.registrantTeam === teamFilter)
+    .filter((r) => !statusFilter || (statusFilter === 'ACTIVE' ? isActive(r) : r.status === 'CANCELLED'))
+    .filter((r) => !onlyDuplicates || duplicateCount(r) > 0)
     .filter((r) => !query.trim() || matchesQuery(r, query.trim()));
 
   function toggleSelected(id: string) {
@@ -202,6 +253,104 @@ export function AdminOrdersPage() {
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '備註儲存失敗');
+    }
+  }
+
+  async function handleSaveSeat() {
+    if (!token || !seatEdit) return;
+    const row = rows?.find((r) => r.id === seatEdit.orderId);
+    const seat = row?.seats.find((x) => x.seatIndex === seatEdit.seatIndex);
+    if (!row || !seat) return;
+    const edit: { name?: string; mealPreference?: string } = {};
+    if (seatEdit.name.trim() !== (seat.name ?? '')) edit.name = seatEdit.name.trim();
+    if (seatEdit.meal.trim() !== (seat.mealPreference ?? '')) edit.mealPreference = seatEdit.meal.trim();
+    if (Object.keys(edit).length === 0) {
+      setSeatEdit(null);
+      return;
+    }
+    setRowBusy(row.id);
+    try {
+      const saved = await api.adminUpdateSeat(token, row.id, seat.seatIndex, edit);
+      setRows(
+        (prev) =>
+          prev?.map((r) =>
+            r.id !== row.id
+              ? r
+              : {
+                  ...r,
+                  seats: r.seats.map((x) =>
+                    x.seatIndex === saved.seatIndex
+                      ? { ...x, name: saved.name, mealPreference: saved.mealPreference }
+                      : x,
+                  ),
+                },
+          ) ?? null,
+      );
+      // The cached history is now stale — drop it so the next open refetches.
+      setHistoryData((prev) => {
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
+      setSeatEdit(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '修改座位失敗');
+    } finally {
+      setRowBusy(null);
+    }
+  }
+
+  async function handleChangeTeam(row: AdminOrderRow, team: string) {
+    if (!token || !team || team === row.registrantTeam) return;
+    const seatCount = row.seats.length;
+    if (
+      !window.confirm(
+        `把這張訂單（${seatCount} 個座位）的體系從「${row.registrantTeam}」改成「${team}」？\n體系是整張訂單共用的，所有座位會一起移過去。`,
+      )
+    ) {
+      return;
+    }
+    setRowBusy(row.id);
+    try {
+      await api.adminUpdateOrderTeam(token, row.id, team);
+      setRows((prev) => prev?.map((r) => (r.id === row.id ? { ...r, registrantTeam: team } : r)) ?? null);
+      setStats(await api.adminGetTeamStats(token));
+      setHistoryData((prev) => {
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '修改體系失敗');
+    } finally {
+      setRowBusy(null);
+    }
+  }
+
+  async function handleCancelOrder(row: AdminOrderRow) {
+    if (!token) return;
+    const names = row.seats.map((s) => s.name || '未填').join('、');
+    if (
+      !window.confirm(
+        `確定要取消這張訂單嗎？\n\n${row.registrantName}｜${row.ticketTypeName}｜${row.quantity} 張\n${names}\n\n票會回到庫存，訂單與紀錄會保留。系統不會退款，退費請自行處理。`,
+      )
+    ) {
+      return;
+    }
+    setRowBusy(row.id);
+    try {
+      await api.adminCancelOrder(token, row.id);
+      setRows((prev) => prev?.map((r) => (r.id === row.id ? { ...r, status: 'CANCELLED' } : r)) ?? null);
+      setStats(await api.adminGetTeamStats(token));
+      setHistoryData((prev) => {
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '取消訂單失敗');
+    } finally {
+      setRowBusy(null);
     }
   }
 
@@ -316,6 +465,22 @@ export function AdminOrdersPage() {
             </option>
           ))}
         </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as '' | 'ACTIVE' | 'CANCELLED')}
+        >
+          <option value="">所有狀態</option>
+          <option value="ACTIVE">有效（已付款／待付款）</option>
+          <option value="CANCELLED">已取消</option>
+        </select>
+        <label className="admin-inline-check">
+          <input
+            type="checkbox"
+            checked={onlyDuplicates}
+            onChange={(e) => setOnlyDuplicates(e.target.checked)}
+          />
+          只看同名重複（{duplicateOrderCount} 張訂單）
+        </label>
         <div className="admin-search">
           <button
             type="button"
@@ -328,7 +493,7 @@ export function AdminOrdersPage() {
           {searchOpen && (
             <input
               autoFocus
-              placeholder="搜尋 email／姓名／團隊／LINE／電話／票種…"
+              placeholder="搜尋座位姓名／email／團隊／LINE／電話／票種…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -336,7 +501,7 @@ export function AdminOrdersPage() {
         </div>
       </div>
 
-      {(query.trim() || teamFilter) && (
+      {(query.trim() || teamFilter || statusFilter || onlyDuplicates) && (
         <p className="hint">找到 {visibleRows.length} 筆結果</p>
       )}
 
@@ -389,7 +554,14 @@ export function AdminOrdersPage() {
                   />
                 </td>
                 <td data-label="Email">{row.userEmail}</td>
-                <td data-label="姓名">{row.registrantName}</td>
+                <td data-label="姓名">
+                  {row.registrantName}
+                  {duplicateCount(row) > 0 && (
+                    <span className="admin-dup-badge" title="這張訂單有座位的姓名在其他座位也出現">
+                      同名重複 {duplicateCount(row)}
+                    </span>
+                  )}
+                </td>
                 <td data-label="聯絡資訊">
                   LINE: {row.registrantLineId}
                   <br />
@@ -400,24 +572,23 @@ export function AdminOrdersPage() {
                 <td data-label="票種">{row.ticketTypeName}</td>
                 <td data-label="張數">{row.quantity}</td>
                 <td data-label="團體/親友名單">
-                  {(groupStatus || companionStatus) ? (
-                    <button
-                      type="button"
-                      className={`admin-expand-toggle ${
-                        (groupStatus ?? companionStatus)!.filled ===
-                        (groupStatus ?? companionStatus)!.total
-                          ? 'admin-fill-complete'
-                          : 'admin-fill-incomplete'
-                      }`}
-                      onClick={() => toggleExpanded(row.id)}
-                    >
-                      {groupStatus ? '團員' : '親友'} {groupStatus?.filled ?? companionStatus?.filled}/
-                      {groupStatus?.total ?? companionStatus?.total}
-                      {isOpen ? ' ▲' : ' ▼'}
-                    </button>
-                  ) : (
-                    <span className="hint">—</span>
-                  )}
+                  <button
+                    type="button"
+                    className={`admin-expand-toggle ${
+                      !(groupStatus ?? companionStatus) ||
+                      (groupStatus ?? companionStatus)!.filled === (groupStatus ?? companionStatus)!.total
+                        ? 'admin-fill-complete'
+                        : 'admin-fill-incomplete'
+                    }`}
+                    onClick={() => toggleExpanded(row.id)}
+                  >
+                    {groupStatus
+                      ? `團員 ${groupStatus.filled}/${groupStatus.total}`
+                      : companionStatus
+                        ? `親友 ${companionStatus.filled}/${companionStatus.total}`
+                        : `座位 ${row.quantity}`}
+                    {isOpen ? ' ▲' : ' ▼'}
+                  </button>
                 </td>
                 <td data-label="狀態">
                   <span className="badge">{row.status}</span>
@@ -492,7 +663,7 @@ export function AdminOrdersPage() {
                   </td>
                 </tr>
               )}
-              {isOpen && (groupStatus || companionStatus) && (
+              {isOpen && (
                 <tr className="admin-group-detail-row">
                   <td />
                   <td colSpan={12}>
@@ -503,55 +674,149 @@ export function AdminOrdersPage() {
                           {row.groupLeaderPhone}
                         </p>
                       )}
-                      {row.groupMembers && row.groupMembers.length > 0 && (
-                        <table className="admin-subtable">
-                          <thead>
-                            <tr>
-                              <th>#</th>
-                              <th>姓名</th>
-                              <th>聯絡方式</th>
-                              <th>用餐需求</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {row.groupMembers.map((m, i) => (
-                              <tr
-                                key={i}
-                                className={isMemberFilled(m) ? '' : 'admin-detail-blank'}
-                              >
-                                <td>{i + 1}</td>
-                                <td>{memberName(m) || '未填寫'}</td>
-                                <td>{memberContact(m) || '未填寫'}</td>
-                                <td>{memberMeal(m) || '未填寫'}</td>
-                              </tr>
+                      <div className="admin-seat-actions">
+                        <label>
+                          體系（整張訂單共用）{' '}
+                          <select
+                            value={row.registrantTeam}
+                            disabled={rowBusy === row.id || row.status === 'CANCELLED'}
+                            onChange={(e) => handleChangeTeam(row, e.target.value)}
+                          >
+                            {!TEAM_OPTIONS.includes(row.registrantTeam as never) && (
+                              <option value={row.registrantTeam}>{row.registrantTeam}（不在清單）</option>
+                            )}
+                            {TEAM_OPTIONS.map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
                             ))}
-                          </tbody>
-                        </table>
-                      )}
-                      {row.companions && row.companions.length > 0 && (
-                        <table className="admin-subtable">
-                          <thead>
-                            <tr>
-                              <th>#</th>
-                              <th>姓名</th>
-                              <th>關係</th>
-                              <th>用餐需求</th>
-                              <th>備註</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {row.companions.map((c: Companion, i: number) => (
-                              <tr key={i} className={c.name.trim() ? '' : 'admin-detail-blank'}>
-                                <td>{i + 1}</td>
-                                <td>{c.name || '未填寫'}</td>
-                                <td>{c.relationship}</td>
-                                <td>{c.mealPreference || '未填寫'}</td>
-                                <td>{c.note}</td>
+                          </select>
+                        </label>
+                        {isActive(row) && (
+                          <button
+                            type="button"
+                            className="danger-button"
+                            disabled={rowBusy === row.id}
+                            onClick={() => handleCancelOrder(row)}
+                          >
+                            取消這張訂單
+                          </button>
+                        )}
+                      </div>
+                      <table className="admin-subtable">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>姓名</th>
+                            <th>身分</th>
+                            <th>用餐需求</th>
+                            <th>聯絡／備註</th>
+                            <th>報到</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {row.seats.map((seat) => {
+                            const editing =
+                              seatEdit?.orderId === row.id && seatEdit.seatIndex === seat.seatIndex;
+                            const member = row.groupMembers?.[seat.seatIndex - 1];
+                            const companionIndex = row.buyingForFamily ? seat.seatIndex : seat.seatIndex - 1;
+                            const companion = row.companions?.[companionIndex];
+                            const detail = row.groupMembers
+                              ? seat.seatIndex === 0
+                                ? row.groupLeaderPhone ?? ''
+                                : member
+                                  ? memberContact(member)
+                                  : ''
+                              : seat.role === 'COMPANION' && companion
+                                ? [companion.relationship, companion.note].filter(Boolean).join('／')
+                                : '';
+                            const dup = isDuplicateSeat(row, seat);
+                            return (
+                              <tr key={seat.seatIndex} className={seat.name ? '' : 'admin-detail-blank'}>
+                                <td>{seat.seatIndex + 1}</td>
+                                <td>
+                                  {editing ? (
+                                    <input
+                                      autoFocus
+                                      value={seatEdit.name}
+                                      maxLength={50}
+                                      onChange={(e) => setSeatEdit({ ...seatEdit, name: e.target.value })}
+                                    />
+                                  ) : (
+                                    <>
+                                      {seat.name || '未填寫'}
+                                      {dup && (
+                                        <span className="admin-dup-badge" title="這個姓名在其他座位也出現">
+                                          同名重複
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+                                </td>
+                                <td>{seat.relation ?? (seat.role === 'SELF' ? '本人' : seat.role === 'COMPANION' ? '同行親友' : '—')}</td>
+                                <td>
+                                  {editing ? (
+                                    <>
+                                      <input
+                                        list="admin-meal-options"
+                                        value={seatEdit.meal}
+                                        maxLength={50}
+                                        onChange={(e) => setSeatEdit({ ...seatEdit, meal: e.target.value })}
+                                      />
+                                      <datalist id="admin-meal-options">
+                                        {MEAL_OPTIONS.map((m) => (
+                                          <option key={m} value={m} />
+                                        ))}
+                                      </datalist>
+                                    </>
+                                  ) : (
+                                    seat.mealPreference || '未填寫'
+                                  )}
+                                </td>
+                                <td>{detail || '—'}</td>
+                                <td>{seat.checkedInAt ? '已報到' : '—'}</td>
+                                <td>
+                                  {row.status === 'CANCELLED' ? null : editing ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="admin-expand-toggle"
+                                        disabled={rowBusy === row.id || !seatEdit.name.trim()}
+                                        onClick={handleSaveSeat}
+                                      >
+                                        儲存
+                                      </button>{' '}
+                                      <button
+                                        type="button"
+                                        className="admin-expand-toggle"
+                                        onClick={() => setSeatEdit(null)}
+                                      >
+                                        取消
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="admin-expand-toggle"
+                                      onClick={() =>
+                                        setSeatEdit({
+                                          orderId: row.id,
+                                          seatIndex: seat.seatIndex,
+                                          name: seat.name ?? '',
+                                          meal: seat.mealPreference ?? '',
+                                        })
+                                      }
+                                    >
+                                      修改
+                                    </button>
+                                  )}
+                                </td>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   </td>
                 </tr>

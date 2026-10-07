@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -18,6 +19,8 @@ import { AdminGuard } from '../auth/admin.guard';
 import { RateLimit } from '../anti-bot/rate-limit.decorator';
 import { UpdateOrderNoteDto } from './dto/update-order-note.dto';
 import { BulkDeleteUsersDto } from './dto/bulk-delete-users.dto';
+import { UpdateSeatDto } from './dto/update-seat.dto';
+import { UpdateOrderTeamDto } from './dto/update-order-team.dto';
 import { BulkDeleteOrdersDto } from './dto/bulk-delete-orders.dto';
 
 @Controller('admin')
@@ -58,6 +61,33 @@ export class AdminController {
     @Body() dto: UpdateOrderNoteDto,
   ) {
     return this.adminService.updateOrderNote(id, dto.note, req.user.email);
+  }
+
+  @Patch('orders/:id/seats/:seatIndex')
+  @RateLimit(60, 60)
+  updateSeat(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('seatIndex', ParseIntPipe) seatIndex: number,
+    @Body() dto: UpdateSeatDto,
+  ) {
+    return this.adminService.updateSeat(id, seatIndex, dto, req.user.email);
+  }
+
+  @Patch('orders/:id/team')
+  @RateLimit(60, 60)
+  updateOrderTeam(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderTeamDto,
+  ) {
+    return this.adminService.updateOrderTeam(id, dto.team, req.user.email);
+  }
+
+  @Post('orders/:id/cancel')
+  @RateLimit(20, 60)
+  cancelOrder(@Req() req: any, @Param('id') id: string) {
+    return this.adminService.cancelOrder(id, req.user.email);
   }
 
   @Get('orders/:id/history')
