@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import type { EventSummary } from '../api/types';
 import { PageLoading } from '../components/PageLoading';
 import { SponsorBox } from '../components/SponsorBox';
+import { ContactBox } from '../components/ContactBox';
 import eventPoster from '../assets/poster/event-poster.webp';
 
 export function EventListPage() {
@@ -61,6 +62,7 @@ export function EventListPage() {
         )}
       </ul>
       <SponsorBox />
+      <ContactBox />
     </div>
   );
 }

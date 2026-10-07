@@ -1,5 +1,6 @@
 import type {
   AdminSponsorship,
+  Contact,
   AdminSponsorshipList,
   CreatedSponsorship,
   MySponsorship,
@@ -185,6 +186,39 @@ export const api = {
   checkinStats: (token: string) =>
     request<{ total: number; checkedIn: number }>('/checkin/stats', {
       headers: authHeader(token),
+    }),
+
+  getContacts: () => request<Contact[]>('/contacts'),
+
+  adminListContacts: (authToken: string) =>
+    request<Contact[]>('/admin/contacts', { headers: authHeader(authToken) }),
+
+  adminCreateContact: (
+    authToken: string,
+    body: { name: string; lineId?: string; email?: string; sortOrder?: number },
+  ) =>
+    request<Contact>('/admin/contacts', {
+      method: 'POST',
+      headers: authHeader(authToken),
+      body: JSON.stringify(body),
+    }),
+
+  /** An empty string for lineId / email clears that field. */
+  adminUpdateContact: (
+    authToken: string,
+    id: string,
+    body: { name?: string; lineId?: string; email?: string; sortOrder?: number },
+  ) =>
+    request<Contact>(`/admin/contacts/${id}`, {
+      method: 'PATCH',
+      headers: authHeader(authToken),
+      body: JSON.stringify(body),
+    }),
+
+  adminDeleteContact: (authToken: string, id: string) =>
+    request<{ deleted: boolean }>(`/admin/contacts/${id}`, {
+      method: 'DELETE',
+      headers: authHeader(authToken),
     }),
 
   getSponsorshipInfo: () => request<SponsorshipInfo>('/sponsorships/info'),

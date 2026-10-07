@@ -320,6 +320,15 @@ export interface AdminTeamStat {
 
 export type SponsorshipStatus = 'PENDING' | 'RECEIVED' | 'CANCELLED';
 
+/** A public contact person: everything here is shown to every visitor. */
+export interface Contact {
+  id: string;
+  name: string;
+  lineId: string | null;
+  email: string | null;
+  sortOrder: number;
+}
+
 export interface SponsorshipInfo {
   presets: number[];
   minAmount: number;

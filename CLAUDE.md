@@ -155,6 +155,10 @@ Three admin writes exist for fixing data after the fact; all record an `OrderHis
 - `updateOrderTeam` moves the *whole order*: team lives once on `Order.registrantTeam`, group members and companions have none of their own, so there is no per-seat team.
 - `cancelOrder` is cancel, not delete: conditional `PENDING/PAID → CANCELLED`, then `releaseOrderStock`, reverting the status if the release fails; refused once anyone on the order has checked in. It never refunds — money is settled outside the system. `deleteOrder` is the destructive one and erases the row.
 
+### Public contact people
+
+`Contact` rows (`src/modules/contact/`) are shown to **every visitor**, signed in or not — home page box, `/contact` page. Nothing in them is private, so the public and admin lists are the same query; don't add a field there that isn't meant for the whole internet. The LINE field takes a plain LINE ID or an `https://` link: the service refuses any other scheme (`javascript:`, `data:`, `http:`), and `ContactList.tsx` only turns a value into an `href` when it is https — keep both checks. Admin edits (`/admin/contacts`) don't write `OrderHistory`: a contact belongs to no order.
+
 ### Auth
 
 Two independent surfaces. `AuthModule` issues JWTs for real user accounts (`JwtAuthGuard`). Admin back-office login is a **single shared** username/bcrypt-hash pair from env (`ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH`), not a `User` row — which is why `OrderHistory.actorUserId` is nullable and admin actions pass a label string instead. `AdminGuard` stacks on top of `JwtAuthGuard` for `/admin/*`.

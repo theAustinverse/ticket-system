@@ -345,3 +345,20 @@ enum SponsorshipStatus {
   RECEIVED
   CANCELLED
 }
+
+/// A public contact person ("有問題請聯絡誰"), shown to every visitor on the
+/// home page and the 聯絡我們 page. Everything here is public by design: no
+/// user link, nothing private. At least one of lineId / email is set (the
+/// service enforces it). lineId is either a LINE ID or an https:// link —
+/// the frontend only turns it into a link when it is https.
+model Contact {
+  id        String   @id @default(cuid())
+  name      String
+  lineId    String?
+  email     String?
+  /// Ascending; ties fall back to createdAt.
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([sortOrder, createdAt])
+}

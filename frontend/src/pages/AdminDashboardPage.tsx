@@ -33,6 +33,10 @@ export function AdminDashboardPage() {
           <h2>贊助管理</h2>
           <p className="hint">核對轉帳、標記已收到、匯出贊助紀錄</p>
         </Link>
+        <Link to="/admin/contacts" className="admin-menu-card">
+          <h2>聯絡窗口管理</h2>
+          <p className="hint">設定首頁與「聯絡我們」頁公開顯示的窗口（姓名、LINE、Email）</p>
+        </Link>
         <Link to="/admin/chat" className="admin-menu-card">
           <h2>心情便利貼管理</h2>
           <p className="hint">瀏覽使用者留言、刪除不當內容</p>

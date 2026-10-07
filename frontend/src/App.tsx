@@ -42,6 +42,8 @@ const CheckinLoginPage = lazy(() => import('./pages/CheckinLoginPage').then((m) 
 const CheckinPage = lazy(() => import('./pages/CheckinPage').then((m) => ({ default: m.CheckinPage })));
 const CheckinRosterPage = lazy(() => import('./pages/CheckinRosterPage').then((m) => ({ default: m.CheckinRosterPage })));
 const EntryGuidePage = lazy(() => import('./pages/EntryGuidePage').then((m) => ({ default: m.EntryGuidePage })));
+const ContactPage = lazy(() => import('./pages/ContactPage').then((m) => ({ default: m.ContactPage })));
+const AdminContactsPage = lazy(() => import('./pages/AdminContactsPage').then((m) => ({ default: m.AdminContactsPage })));
 const AdminSponsorshipsPage = lazy(() => import('./pages/AdminSponsorshipsPage').then((m) => ({ default: m.AdminSponsorshipsPage })));
 
 function NavBar() {
@@ -58,6 +60,7 @@ function NavBar() {
             📖 使用教學
           </button>
           <Link to="/entry-guide">🧸 入場教學</Link>
+          <Link to="/contact">聯絡我們</Link>
           <Link to="/my-tickets">我的票卷</Link>
           <Link to="/profile">設定</Link>
           <button className="link-button" onClick={logout}>
@@ -67,6 +70,7 @@ function NavBar() {
       ) : (
         <div className="navbar-actions">
           <Link to="/entry-guide">🧸 入場教學</Link>
+          <Link to="/contact">聯絡我們</Link>
           <Link to="/login">登入</Link>
           <Link to="/login" state={{ mode: 'register' }}>
             註冊
@@ -154,6 +158,7 @@ export function App() {
         <Route path="/order/:ticketTypeId" element={<OrderPage />} />
         <Route path="/orders/:orderId" element={<OrderStatusPage />} />
         <Route path="/entry-guide" element={<EntryGuidePage />} />
+        <Route path="/contact" element={<ContactPage />} />
         <Route path="/t/:token" element={<PublicTicketPage />} />
         <Route path="/checkin/login" element={<CheckinLoginPage />} />
         <Route path="/checkin" element={<CheckinPage />} />
@@ -163,6 +168,7 @@ export function App() {
         <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/admin/orders" element={<AdminOrdersPage />} />
         <Route path="/admin/events" element={<AdminEventsPage />} />
+        <Route path="/admin/contacts" element={<AdminContactsPage />} />
         <Route path="/admin/sponsorships" element={<AdminSponsorshipsPage />} />
         <Route path="/admin/chat" element={<AdminChatPage />} />
         <Route path="/admin/ai-image" element={<AdminAiImagePage />} />
