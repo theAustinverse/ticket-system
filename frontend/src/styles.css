@@ -2203,7 +2203,7 @@ button:disabled {
 .contact-card p { margin: 0.2rem 0; word-break: break-all; }
 .contact-label {
   display: inline-block;
-  min-width: 3.4rem;
+  min-width: 4.4rem;
   color: var(--paper-dim);
   font-size: 0.8rem;
 }

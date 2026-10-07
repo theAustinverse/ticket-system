@@ -9,7 +9,7 @@ function lineHref(lineId: string): string | null {
   return /^https:\/\//i.test(lineId) ? lineId : null;
 }
 
-/** One card per contact person: name, LINE, Email. Shared by the home box and the 聯絡我們 page. */
+/** One card per contact person: name, LINE ID, Email. Shared by the home box and the 聯絡我們 page. */
 export function ContactList({ contacts }: { contacts: Contact[] }) {
   return (
     <ul className="contact-list">
@@ -20,7 +20,7 @@ export function ContactList({ contacts }: { contacts: Contact[] }) {
             <h3>{c.name}</h3>
             {c.lineId && (
               <p>
-                <span className="contact-label">LINE</span>
+                <span className="contact-label">LINE ID</span>
                 {href ? (
                   <a href={href} target="_blank" rel="noopener noreferrer">
                     開啟 LINE 連結
