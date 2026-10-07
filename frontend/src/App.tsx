@@ -22,6 +22,7 @@ import { GuidedTour } from './tour/GuidedTour';
 import { useTour } from './tour/TourProvider';
 import { RouteFx, useRouteTransition } from './transitions/RouteTransition';
 import { PageLoading } from './components/PageLoading';
+import { NoticeMarquee } from './components/NoticeMarquee';
 
 // Pages that most visitors never open (back office, door scanner, 3D lab, the
 // trailer) are split into their own chunks so they don't weigh down the first
@@ -143,6 +144,7 @@ export function App() {
       {!isBareRoute && <BackgroundMusic />}
       {!isAdminRoute && !isBareRoute && <ChatWidget />}
       {!isAdminRoute && !isBareRoute && <GuidedTour />}
+      {!isAdminRoute && !isBareRoute && <NoticeMarquee />}
       {isCheckinRoute ? <CheckinNavBar /> : isAdminRoute ? <AdminNavBar /> : <NavBar />}
       <Suspense fallback={<PageLoading />}>
       <Routes location={shown}>

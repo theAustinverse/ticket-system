@@ -260,7 +260,7 @@ h4 {
   border-bottom: 1px solid var(--line);
   box-shadow: 0 1px 24px rgba(0, 0, 0, 0.5);
   position: sticky;
-  top: 0;
+  top: var(--notice-h, 0px);
   z-index: 10;
 }
 
@@ -2211,3 +2211,41 @@ button:disabled {
 .contact-card a { color: var(--gold-bright); }
 .contact-box a,
 .contact-card a { color: var(--gold-bright); }
+
+/* anti-scam notice above the navbar */
+.notice-marquee {
+  position: sticky;
+  top: 0;
+  z-index: 11;
+  height: 2.3rem;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(180deg, #7a1414, #4a0b0b);
+  border-bottom: 1px solid var(--gold);
+  color: var(--gold-bright);
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+}
+.notice-marquee-track {
+  display: flex;
+  flex: none;
+  width: max-content;
+  animation: notice-scroll 28s linear infinite;
+}
+.notice-marquee:hover .notice-marquee-track { animation-play-state: paused; }
+.notice-marquee-item {
+  flex: none;
+  padding-right: 4rem;
+  white-space: nowrap;
+}
+@keyframes notice-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notice-marquee { height: auto; min-height: 2.3rem; padding: 0.35rem 1rem; }
+  .notice-marquee-track { animation: none; width: auto; }
+  .notice-marquee-item { white-space: normal; padding-right: 0; }
+  .notice-marquee-item[aria-hidden='true'] { display: none; }
+}
