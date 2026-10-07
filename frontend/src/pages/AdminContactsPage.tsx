@@ -113,7 +113,7 @@ export function AdminContactsPage() {
       </Link>
       <h1>聯絡窗口管理</h1>
       <p className="hint">
-        這裡填的資料會公開顯示在首頁和「聯絡我們」頁，任何訪客都看得到。LINE 欄位可填 LINE ID，或 https:// 開頭的連結；LINE 和 Email 至少填一個。排序數字小的排前面。
+        這裡填的資料會公開顯示在首頁和「聯絡我們」頁，任何訪客都看得到。LINE ID 欄位可填 LINE ID，或 https:// 開頭的連結；LINE ID 和 Email 至少填一個。排序數字小的排前面。
       </p>
       {notice && <p className="hint">{notice}</p>}
 
@@ -126,7 +126,7 @@ export function AdminContactsPage() {
           onChange={(e) => setAdding({ ...adding, name: e.target.value })}
         />
         <input
-          placeholder="LINE ID 或 https 連結"
+          placeholder="LINE ID（或 https 連結）"
           value={adding.lineId}
           maxLength={200}
           onChange={(e) => setAdding({ ...adding, lineId: e.target.value })}
@@ -159,7 +159,7 @@ export function AdminContactsPage() {
               <tr>
                 <th>排序</th>
                 <th>姓名或稱呼</th>
-                <th>LINE</th>
+                <th>LINE ID</th>
                 <th>Email</th>
                 <th />
               </tr>
