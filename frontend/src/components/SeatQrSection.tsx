@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { OrderWithSession, Seat } from '../api/types';
-import { formatTaipei, holderLabel, ticketUrl } from '../tickets';
+import { formatTaipei, holderLabel, holderNote, ticketUrl } from '../tickets';
 import { TicketQr } from './TicketQr';
 
 /**
@@ -55,6 +55,9 @@ export function SeatQrSection({ order }: { order: OrderWithSession }) {
                 className={`seat-card${seat.released ? ' is-void' : ''}${seat.checkedInAt ? ' is-done' : ''}`}
               >
                 <span className="seat-name">{holderLabel(seat.holder)}</span>
+                {holderNote(seat.holder) && (
+                  <span className="seat-note">{holderNote(seat.holder)}</span>
+                )}
                 <span className="hint">
                   第 {seat.seatIndex + 1} / {order.seats.length} 位
                 </span>

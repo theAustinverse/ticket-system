@@ -25,6 +25,7 @@ describe('OrderService', () => {
       name: `Member ${i + 1}`,
       contact: `member-${i + 1}-line`,
       mealPreference: '葷食',
+      kind: 'PARTNER' as const,
     }));
   }
 
@@ -52,8 +53,15 @@ describe('OrderService', () => {
         update: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: jest.fn(),
+        // Own-seat orders already on the account; 0 unless a test says so.
+        count: jest.fn().mockResolvedValue(0),
       },
-      $transaction: jest.fn(),
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      // Order creation writes inside an interactive transaction (callback
+      // form); the array form is what acceptTransfer uses.
+      $transaction: jest.fn(async (arg: any) =>
+        typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+      ),
       ticket: {
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn((args) => ({ op: 'ticket.update', args })),
@@ -247,7 +255,7 @@ describe('OrderService', () => {
     await service.createOrder('user-1', {
       ...validGroupOrderDto,
       groupMembers: [
-        { name: 'Only One Filled In', contact: '', mealPreference: '' },
+        { name: 'Only One Filled In', contact: '', mealPreference: '', kind: 'PARTNER' as const },
         ...Array.from({ length: 9 }, () => ({
           name: '',
           contact: '',
@@ -266,6 +274,190 @@ describe('OrderService', () => {
         groupMembers: makeMembers(1),
       }),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  describe('one own seat per account', () => {
+    const individualType = {
+      id: 'tt-individual',
+      price: 2200,
+      fixedQuantity: null,
+      maxQuantityPerOrder: 5,
+      sessionId: 'session-1',
+    };
+    const singleType = { ...individualType, id: 'tt-single', maxQuantityPerOrder: null };
+    const own = {
+      ticketTypeId: 'tt-individual',
+      quantity: 1,
+      registrantName: '王小明',
+      registrantTeam: 'Team',
+      registrantLineId: 'buyer-line',
+      registrantPhone: '0900000000',
+      mealPreference: '葷食',
+    };
+    const relative = (name: string) => ({
+      name,
+      relationship: '父母',
+      mealPreference: '葷食',
+      note: 'n',
+    });
+
+    beforeEach(() => {
+      eventService.findTicketType.mockResolvedValue(individualType);
+      inventory.decrementStock.mockResolvedValue(0);
+      prisma.order.create.mockResolvedValue({ id: 'order-new' });
+    });
+
+    it('refuses a second own-seat order before touching stock', async () => {
+      prisma.order.count.mockResolvedValue(1);
+
+      await expect(service.createOrder('user-1', own)).rejects.toThrow(
+        '每個帳號只能有一張本人的票',
+      );
+      expect(inventory.decrementStock).not.toHaveBeenCalled();
+      expect(prisma.order.create).not.toHaveBeenCalled();
+    });
+
+    it('counts only live orders that hold a seat for the buyer (not family orders, not cancelled)', async () => {
+      await service.createOrder('user-1', own);
+
+      expect(prisma.order.count).toHaveBeenCalledWith({
+        where: {
+          userId: 'user-1',
+          status: { in: ['PAID', 'PENDING'] },
+          buyingForFamily: false,
+        },
+      });
+    });
+
+    it('lets a buyer who already holds a seat order for family, named as the relatives', async () => {
+      prisma.order.count.mockResolvedValue(1);
+
+      await service.createOrder('user-1', {
+        ...own,
+        quantity: 2,
+        buyingForFamily: true,
+        companions: [relative('陳大華'), relative('林小美')],
+      });
+
+      expect(prisma.order.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ buyingForFamily: true }),
+        }),
+      );
+      // A family order holds no seat for the buyer, so it takes no lock.
+      expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('refuses a family order whose relative is named as the buyer', async () => {
+      await expect(
+        service.createOrder('user-1', {
+          ...own,
+          quantity: 1,
+          buyingForFamily: true,
+          companions: [relative('王小明')],
+        }),
+      ).rejects.toThrow('不能和您本人相同');
+    });
+
+    it('refuses the same relative listed twice', async () => {
+      await expect(
+        service.createOrder('user-1', {
+          ...own,
+          quantity: 3,
+          companions: [relative('陳大華'), relative('陳大華')],
+        }),
+      ).rejects.toThrow('重複');
+    });
+
+    it('refuses buyingForFamily on a ticket type that takes no companions', async () => {
+      eventService.findTicketType.mockResolvedValue(singleType);
+
+      await expect(
+        service.createOrder('user-1', {
+          ...own,
+          ticketTypeId: 'tt-single',
+          buyingForFamily: true,
+        }),
+      ).rejects.toThrow('不開放幫親友代訂');
+      expect(inventory.decrementStock).not.toHaveBeenCalled();
+    });
+
+    it('holds under a race: a concurrent order that slips past the early check is refused at the write, and its stock goes back', async () => {
+      // The early check sees nothing; by the time this request holds the
+      // per-account lock the other request's order has landed.
+      prisma.order.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+
+      await expect(service.createOrder('user-1', own)).rejects.toThrow(
+        '每個帳號只能有一張本人的票',
+      );
+
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(prisma.order.create).not.toHaveBeenCalled();
+      expect(inventory.releaseStock).toHaveBeenCalledWith(expect.anything(), 1);
+    });
+
+    it('applies to a group bundle too, and refuses before the group claim is even taken', async () => {
+      eventService.findTicketType.mockResolvedValue(groupTicketType);
+      prisma.order.count.mockResolvedValue(1);
+
+      await expect(
+        service.createOrder('user-1', validGroupOrderDto),
+      ).rejects.toThrow('每個帳號只能有一張本人的票');
+
+      expect(inventory.claimGroupPurchase).not.toHaveBeenCalled();
+      expect(inventory.decrementStock).not.toHaveBeenCalled();
+    });
+
+    it('gives the group claim and the stock back when a bundle is refused at the write', async () => {
+      eventService.findTicketType.mockResolvedValue(groupTicketType);
+      prisma.order.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+
+      await expect(
+        service.createOrder('user-1', validGroupOrderDto),
+      ).rejects.toThrow('每個帳號只能有一張本人的票');
+
+      expect(inventory.releaseGroupPurchaseClaim).toHaveBeenCalledWith(
+        'session-1',
+        'user-1',
+      );
+      expect(inventory.releaseStock).toHaveBeenCalled();
+    });
+  });
+
+  describe('group member identity on update', () => {
+    const existingOrder = {
+      id: 'order-1',
+      userId: 'user-1',
+      ticketType: {
+        ...groupTicketType,
+        session: { startTime: new Date('2099-01-01T00:00:00Z') },
+        batch: { saleEndAt: null },
+      },
+    };
+
+    beforeEach(() => {
+      prisma.order.findUnique = jest.fn().mockResolvedValue(existingOrder);
+      prisma.order.update = jest.fn().mockResolvedValue(existingOrder);
+    });
+
+    it('refuses a named member who is not marked as 夥伴 or 親友 — which is how old orders get filled in', async () => {
+      const members = makeMembers(10).map(({ kind: _kind, ...rest }) => rest);
+
+      await expect(
+        service.updateGroupMembers('user-1', 'order-1', members as any),
+      ).rejects.toThrow('是夥伴還是親友');
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('stores a relative together with whose relative it is', async () => {
+      const members = makeMembers(10);
+      members[2] = { ...members[2], kind: 'RELATIVE' as any, relativeOfSeat: 1 } as any;
+
+      await service.updateGroupMembers('user-1', 'order-1', members);
+
+      const saved = prisma.order.update.mock.calls[0][0].data.groupMembers;
+      expect(saved[2]).toMatchObject({ kind: 'RELATIVE', relativeOfSeat: 1 });
+    });
   });
 
   describe('updateGroupMembers', () => {
@@ -705,6 +897,7 @@ describe('OrderService', () => {
         {
           id: 'order-1',
           registrantName: '王小明',
+          registrantTeam: '里歐',
           mealPreference: '葷食',
           groupLeaderName: null,
           groupMembers: null,
@@ -729,8 +922,8 @@ describe('OrderService', () => {
 
       expect(order).not.toHaveProperty('tickets');
       expect(order.seats).toEqual([
-        { id: 't0', seatIndex: 0, token: 'a'.repeat(32), checkedInAt: null, released: false, holder: { name: '王小明', role: 'SELF', mealPreference: '葷食' } },
-        { id: 't1', seatIndex: 1, token: 'b'.repeat(32), checkedInAt: null, released: false, holder: { name: '王媽媽', role: 'COMPANION', mealPreference: '素食' } },
+        { id: 't0', seatIndex: 0, token: 'a'.repeat(32), checkedInAt: null, released: false, holder: { name: '王小明', role: 'SELF', mealPreference: '葷食', team: '里歐', relation: null } },
+        { id: 't1', seatIndex: 1, token: 'b'.repeat(32), checkedInAt: null, released: false, holder: { name: '王媽媽', role: 'COMPANION', mealPreference: '素食', team: '里歐', relation: null } },
       ]);
     });
   });
@@ -1063,7 +1256,8 @@ describe('OrderService', () => {
       sessionId: 'session-1',
     };
 
-    const CHINESE_NAMES = ['王小明', '陳小華', '林小美', '張小強'];
+    // None may equal baseDto's buyer (王小明): extra seats are for relatives, named as themselves.
+    const CHINESE_NAMES = ['陳小華', '林小美', '張小強', '李小龍'];
 
     function makeCompanions(count: number) {
       return Array.from({ length: count }, (_, i) => ({

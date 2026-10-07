@@ -18,6 +18,7 @@ import { QueueRoomService } from '../queue-room/queue-room.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { REFUND_CUTOFF_DAYS } from './order.constants';
 import type { GroupMember } from './types/group-member';
+import { validateGroupMemberKinds } from './group-member-kinds';
 import type { Companion } from './types/companion';
 import { recordOrderHistory } from './order-history';
 import {
@@ -70,6 +71,23 @@ export class OrderService {
   }
 
   /**
+   * Orders on this account that hold a seat for the account holder
+   * themselves: any group bundle (the leader is a seat) and any individual
+   * order not placed on behalf of family. A family order holds no seat for
+   * the buyer. Cancelled and expired orders hold nothing.
+   */
+  private ownSeatOrderWhere(userId: string) {
+    return {
+      userId,
+      status: { in: ['PAID', 'PENDING'] as ('PAID' | 'PENDING')[] },
+      buyingForFamily: false,
+    };
+  }
+
+  private static readonly ONE_SEAT_MESSAGE =
+    '每個帳號只能有一張本人的票。若是幫親友代訂，請勾選「幫親友代訂」並填寫親友的姓名';
+
+  /**
    * This system only handles the ticket-grabbing/reservation itself — there
    * is no in-app payment step. A created order is immediately the final
    * successful state (PAID), and a confirmation email goes out right away.
@@ -108,7 +126,25 @@ export class OrderService {
     // and both succeed. The atomic Redis claim below closes that race
     // instead of merely narrowing it.
     let groupClaimAcquired = false;
+    let groupMembers = dto.groupMembers;
+    // Whether this order puts a seat in the buyer's own name. Only a ticket
+    // type that takes companions may be bought on behalf of family; for any
+    // other type the flag is refused rather than quietly honoured, or it
+    // would be a way round the one-seat rule.
+    const buyingForFamily = dto.buyingForFamily ?? false;
+    const takesOwnSeat = !buyingForFamily;
     try {
+      if (buyingForFamily && !ticketType.maxQuantityPerOrder) {
+        throw new BadRequestException('這個票種不開放幫親友代訂');
+      }
+      // Cheap early refusal, before any stock moves. The check that actually
+      // holds under concurrent requests is the one inside the write below.
+      if (
+        takesOwnSeat &&
+        (await this.prisma.order.count({ where: this.ownSeatOrderWhere(userId) })) >= 1
+      ) {
+        throw new BadRequestException(OrderService.ONE_SEAT_MESSAGE);
+      }
       if (ticketType.fixedQuantity !== null) {
         const claimed = await this.inventory.claimGroupPurchase(
           ticketType.sessionId,
@@ -146,6 +182,10 @@ export class OrderService {
             `groupMembers must list exactly ${requiredMembers} entries (blank fields are allowed for now)`,
           );
         }
+        groupMembers = validateGroupMemberKinds(
+          dto.groupMembers as GroupMember[],
+          ticketType.fixedQuantity,
+        );
       } else if (ticketType.maxQuantityPerOrder) {
         // This specific ticket type explicitly allows buying more than 1 per
         // order on behalf of family members (e.g. the early-bird individual
@@ -180,12 +220,26 @@ export class OrderService {
               `companions must list exactly ${requiredCompanions} entries`,
             );
           }
+          const buyerName = dto.registrantName.trim();
+          const seen = new Set<string>();
           for (const companion of dto.companions) {
             if (!CHINESE_NAME_REGEX.test(companion.name)) {
               throw new BadRequestException(
                 'companion name must be Chinese characters only',
               );
             }
+            // The extra seats are for relatives and friends, named as
+            // themselves: the buyer's own name is the one-seat rule's loophole.
+            const name = companion.name.trim();
+            if (name === buyerName) {
+              throw new BadRequestException(
+                '親友的姓名不能和您本人相同，請填寫親友自己的姓名',
+              );
+            }
+            if (seen.has(name)) {
+              throw new BadRequestException(`親友姓名「${name}」重複填寫`);
+            }
+            seen.add(name);
           }
         }
       } else {
@@ -232,30 +286,44 @@ export class OrderService {
 
       let order;
       try {
-        order = await this.prisma.order.create({
-          data: {
-            userId,
-            ticketTypeId: dto.ticketTypeId,
-            quantity: dto.quantity,
-            totalAmount,
-            status: 'PAID',
-            registrantName: dto.registrantName,
-            registrantTeam: dto.registrantTeam,
-            registrantLineId: dto.registrantLineId,
-            registrantPhone: dto.registrantPhone,
-            mealPreference: dto.mealPreference,
-            groupLeaderName: dto.groupLeaderName,
-            groupLeaderLineId: dto.groupLeaderLineId,
-            groupLeaderPhone: dto.groupLeaderPhone,
-            groupMembers: dto.groupMembers as unknown as object[],
-            companions: dto.companions as unknown as object[],
-            buyingForFamily: dto.buyingForFamily ?? false,
-            childSeatCount: dto.childSeatCount ?? 0,
-            // Created in the same statement as the order, so there's never an
-            // order without its seats (or seats without an order) — and if
-            // this whole create fails, the stock rollback below covers both.
-            tickets: { create: ticketSeatsFor(dto.quantity) },
-          },
+        order = await this.prisma.$transaction(async (tx) => {
+          if (takesOwnSeat) {
+            // Serialise this user's own-seat orders: two simultaneous requests
+            // would otherwise both count zero and both write. The lock is
+            // per account and released at commit, so other buyers never wait.
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${userId}))`;
+            const held = await tx.order.count({
+              where: this.ownSeatOrderWhere(userId),
+            });
+            if (held >= 1) {
+              throw new BadRequestException(OrderService.ONE_SEAT_MESSAGE);
+            }
+          }
+          return tx.order.create({
+            data: {
+              userId,
+              ticketTypeId: dto.ticketTypeId,
+              quantity: dto.quantity,
+              totalAmount,
+              status: 'PAID',
+              registrantName: dto.registrantName,
+              registrantTeam: dto.registrantTeam,
+              registrantLineId: dto.registrantLineId,
+              registrantPhone: dto.registrantPhone,
+              mealPreference: dto.mealPreference,
+              groupLeaderName: dto.groupLeaderName,
+              groupLeaderLineId: dto.groupLeaderLineId,
+              groupLeaderPhone: dto.groupLeaderPhone,
+              groupMembers: groupMembers as unknown as object[],
+              companions: dto.companions as unknown as object[],
+              buyingForFamily,
+              childSeatCount: dto.childSeatCount ?? 0,
+              // Created in the same statement as the order, so there's never an
+              // order without its seats (or seats without an order) — and if
+              // this whole create fails, the stock rollback below covers both.
+              tickets: { create: ticketSeatsFor(dto.quantity) },
+            },
+          });
         });
       } catch (error) {
         // Roll back the reservation if persisting the order fails.
@@ -393,10 +461,17 @@ export class OrderService {
       );
     }
 
+    // A named member must say whether it is a 夥伴 or a 親友 (and whose).
+    // This is also how orders placed before that was asked get filled in.
+    const checkedMembers = validateGroupMemberKinds(
+      groupMembers,
+      order.ticketType.fixedQuantity,
+    );
+
     const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
-        groupMembers: groupMembers as unknown as object[],
+        groupMembers: checkedMembers as unknown as object[],
         ...(childSeatCount !== undefined && { childSeatCount }),
       },
     });

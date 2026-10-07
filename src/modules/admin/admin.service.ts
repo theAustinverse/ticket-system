@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { ChatGateway } from '../chat/chat.gateway';
 import { recordOrderHistory } from '../order/order-history';
+import { groupMemberRelationAt } from '../checkin/ticket-seats';
 import type { GroupMember } from '../order/types/group-member';
 import type { Companion } from '../order/types/companion';
 
@@ -400,7 +401,7 @@ export class AdminService {
               .map((m, i) =>
                 typeof m === 'string'
                   ? `${i + 1}. ${m || '未填寫'}`
-                  : `${i + 1}. ${m.name || '未填寫'}（${m.contact || '未填寫'}／${m.mealPreference || '未填寫'}）`,
+                  : `${i + 1}. ${m.name || '未填寫'}（${m.contact || '未填寫'}／${m.mealPreference || '未填寫'}／${groupMemberRelationAt(order, i + 1) ?? '身分未填'}）`,
               )
               .join('\n')
           : '',

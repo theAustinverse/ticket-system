@@ -28,6 +28,17 @@ export class GroupMemberDto {
   @IsString()
   @MaxLength(100)
   mealPreference: string;
+
+  /** Required for a named member; checked in validateGroupMemberKinds, which also knows the seat count. */
+  @IsOptional()
+  @IsIn(['PARTNER', 'RELATIVE'])
+  kind?: 'PARTNER' | 'RELATIVE';
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(49)
+  relativeOfSeat?: number;
 }
 
 const COMPANION_RELATIONSHIPS = ['父母', '兄弟姊妹', '伴侶', '子女'] as const;

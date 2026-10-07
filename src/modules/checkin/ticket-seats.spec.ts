@@ -8,6 +8,7 @@ import {
 function order(overrides: Partial<SeatOrder> = {}): SeatOrder {
   return {
     registrantName: '王小明',
+    registrantTeam: '里歐',
     mealPreference: '葷食',
     groupLeaderName: null,
     groupMembers: null,
@@ -33,8 +34,8 @@ describe('seatHolder', () => {
         { name: '王妹妹', relationship: '兄弟姊妹', mealPreference: '葷食', note: 'n' },
       ],
     });
-    expect(seatHolder(o, 0)).toEqual({ name: '王小明', role: 'SELF', mealPreference: '葷食' });
-    expect(seatHolder(o, 1)).toEqual({ name: '王媽媽', role: 'COMPANION', mealPreference: '素食' });
+    expect(seatHolder(o, 0)).toEqual({ name: '王小明', role: 'SELF', mealPreference: '葷食', team: '里歐', relation: null });
+    expect(seatHolder(o, 1)).toEqual({ name: '王媽媽', role: 'COMPANION', mealPreference: '素食', team: '里歐', relation: null });
     expect(seatHolder(o, 2).name).toBe('王妹妹');
   });
 
@@ -46,7 +47,7 @@ describe('seatHolder', () => {
         { name: '王媽媽', relationship: '父母', mealPreference: '素食', note: 'n' },
       ],
     });
-    expect(seatHolder(o, 0)).toEqual({ name: '王爸爸', role: 'COMPANION', mealPreference: '葷食' });
+    expect(seatHolder(o, 0)).toEqual({ name: '王爸爸', role: 'COMPANION', mealPreference: '葷食', team: '里歐', relation: null });
     expect(seatHolder(o, 1).name).toBe('王媽媽');
   });
 
@@ -59,9 +60,54 @@ describe('seatHolder', () => {
         { name: '', contact: '', mealPreference: '' },
       ],
     });
-    expect(seatHolder(o, 0)).toEqual({ name: '主揪陳', role: 'LEADER', mealPreference: '葷食' });
-    expect(seatHolder(o, 1)).toEqual({ name: '團員一', role: 'MEMBER', mealPreference: '素食' });
-    expect(seatHolder(o, 2)).toEqual({ name: null, role: 'MEMBER', mealPreference: null });
+    expect(seatHolder(o, 0)).toEqual({ name: '主揪陳', role: 'LEADER', mealPreference: '葷食', team: '里歐', relation: '主揪' });
+    // Not marked: an order from before partner/relative was asked.
+    expect(seatHolder(o, 1)).toEqual({ name: '團員一', role: 'MEMBER', mealPreference: '素食', team: '里歐', relation: null });
+    expect(seatHolder(o, 2)).toEqual({ name: null, role: 'MEMBER', mealPreference: null, team: '里歐', relation: null });
+  });
+
+  describe('what the ticket says about a group seat', () => {
+    const marked = (members: object[]) =>
+      order({ groupLeaderName: '主揪陳', ticketType: groupType(), groupMembers: members });
+    const m = (name: string, extra: object = {}) => ({ name, contact: '', mealPreference: '', ...extra });
+
+    it('a partner reads "夥伴" under the leader\'s team', () => {
+      const holder = seatHolder(marked([m('甲', { kind: 'PARTNER' })]), 1);
+
+      expect(holder.team).toBe('里歐');
+      expect(holder.relation).toBe('夥伴');
+    });
+
+    it('a relative reads as "<that partner>的親友", resolved from the seat at read time', () => {
+      const o = marked([m('甲', { kind: 'PARTNER' }), m('乙', { kind: 'RELATIVE', relativeOfSeat: 1 })]);
+
+      expect(seatHolder(o, 2).relation).toBe('甲的親友');
+    });
+
+    it('a relative of the leader reads as the leader\'s relative', () => {
+      const o = marked([m('乙', { kind: 'RELATIVE', relativeOfSeat: 0 })]);
+
+      expect(seatHolder(o, 1).relation).toBe('主揪陳的親友');
+    });
+
+    it('follows a corrected spelling, since only the seat number is stored', () => {
+      const o = marked([m('甲（改過）', { kind: 'PARTNER' }), m('乙', { kind: 'RELATIVE', relativeOfSeat: 1 })]);
+
+      expect(seatHolder(o, 2).relation).toBe('甲（改過）的親友');
+    });
+
+    it('falls back to plain "親友" when the partner it points at has no name any more', () => {
+      const o = marked([m('', {}), m('乙', { kind: 'RELATIVE', relativeOfSeat: 1 })]);
+
+      expect(seatHolder(o, 2).relation).toBe('親友');
+    });
+
+    it('team is the same for every seat, including a blank one', () => {
+      const o = marked([m('甲', { kind: 'PARTNER' })]);
+
+      expect(seatHolder(o, 0).team).toBe('里歐');
+      expect(seatHolder(o, 5).team).toBe('里歐');
+    });
   });
 
   it('tolerates the legacy plain-string member shape', () => {

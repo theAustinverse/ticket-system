@@ -1,3 +1,10 @@
+import {
+  identityError,
+  identityPayload,
+  MemberIdentityFields,
+  partnerChoices,
+  type MemberKind,
+} from '../components/MemberIdentityFields';
 import { Icon3D } from '../components/Icon3D';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -28,6 +35,9 @@ interface MemberDraft {
   contact: string;
   mealChoice: string;
   mealCustom: string;
+  kind: MemberKind;
+  /** The partner's seat as a string ('0' is the leader), '' until chosen. */
+  relativeOf: string;
 }
 
 /**
@@ -36,9 +46,11 @@ interface MemberDraft {
  * of a string primitive when displaying/editing an older order.
  */
 function toMemberDraft(member?: GroupMember | string): MemberDraft {
-  if (!member) return { name: '', contact: '', mealChoice: '', mealCustom: '' };
+  if (!member) {
+    return { name: '', contact: '', mealChoice: '', mealCustom: '', kind: '', relativeOf: '' };
+  }
   if (typeof member === 'string') {
-    return { name: member, contact: '', mealChoice: '', mealCustom: '' };
+    return { name: member, contact: '', mealChoice: '', mealCustom: '', kind: '', relativeOf: '' };
   }
   const isKnownChoice = MEAL_OPTIONS.includes(member.mealPreference);
   return {
@@ -50,6 +62,8 @@ function toMemberDraft(member?: GroupMember | string): MemberDraft {
         ? member.mealPreference
         : '其他',
     mealCustom: isKnownChoice ? '' : member.mealPreference,
+    kind: member.kind ?? '',
+    relativeOf: member.relativeOfSeat === undefined ? '' : String(member.relativeOfSeat),
   };
 }
 
@@ -64,6 +78,7 @@ function toGroupMember(draft: MemberDraft): GroupMember {
     contact: draft.contact.trim(),
     mealPreference:
       draft.mealChoice === '其他' ? draft.mealCustom.trim() : draft.mealChoice,
+    ...identityPayload(draft),
   };
 }
 
@@ -290,6 +305,11 @@ export function MyTicketsPage() {
   async function handleSaveMembers(order: OrderWithSession) {
     if (!token) return;
     const draft = memberDrafts[order.id] ?? [];
+    const identity = identityError(order.groupLeaderName || order.registrantName, draft);
+    if (identity) {
+      setError(identity);
+      return;
+    }
     setSavingId(order.id);
     setError(null);
     try {
@@ -548,6 +568,17 @@ export function MyTicketsPage() {
                             }
                           />
                         </label>
+                        <MemberIdentityFields
+                          draft={member}
+                          choices={partnerChoices(
+                            order.groupLeaderName || order.registrantName,
+                            memberDrafts[order.id] ?? [],
+                            index,
+                          )}
+                          onChange={(patch) =>
+                            updateMemberDraft(order.id, index, patch)
+                          }
+                        />
                         <label>
                           聯絡方式（LINE ID 或電話）
                           <input

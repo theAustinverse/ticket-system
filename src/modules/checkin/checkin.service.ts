@@ -261,8 +261,8 @@ export class CheckinService {
   /**
    * What the no-login share page shows — the link a group leader forwards
    * to a member. Holding the token is the only credential, so it reveals the
-   * seat's own name and event details, and nothing about the buyer (no
-   * email, phone or team).
+   * seat's own name, its team and how it relates to the group ("夥伴",
+   * "<夥伴>的親友"), and the event details — never the buyer's email or phone.
    */
   async publicTicket(token: string) {
     const ticket = await this.loadTicket({ token });
@@ -271,6 +271,8 @@ export class CheckinService {
     return {
       holderName: holder.name,
       role: holder.role,
+      team: holder.team,
+      relation: holder.relation,
       seatIndex: ticket.seatIndex,
       seatCount: order.quantity,
       status: seatStatus(order, ticket),

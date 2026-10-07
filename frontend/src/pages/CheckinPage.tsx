@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import type QrScannerType from 'qr-scanner';
 import { api, ApiError, CHECKIN_TOKEN_KEY } from '../api/client';
 import type { CheckInResult, CheckinSeat } from '../api/types';
-import { formatTaipei, holderLabel, parseScannedToken, SEAT_STATUS_LABEL } from '../tickets';
+import { formatTaipei, holderLabel, holderNote, parseScannedToken, SEAT_STATUS_LABEL } from '../tickets';
 
 const QUICK_MODE_KEY = 'checkin-quick-mode';
 /** The same QR held in front of the camera re-reads several times a second — ignore repeats for this long after it's been handled. */
@@ -259,6 +259,9 @@ export function CheckinPage() {
             <>
               <p className="checkin-verdict">{described!.text}</p>
               <p className="checkin-name">{holderLabel(outcome.seat.holder)}</p>
+              {holderNote(outcome.seat.holder) && (
+                <p className="checkin-note">{holderNote(outcome.seat.holder)}</p>
+              )}
               <p className="hint">
                 {outcome.seat.ticketTypeName}・第 {outcome.seat.seatIndex + 1} / {outcome.seat.seatCount} 位
               </p>
@@ -301,6 +304,9 @@ export function CheckinPage() {
             <div key={seat.id} className="checkin-row">
               <div>
                 <div className="checkin-name">{holderLabel(seat.holder)}</div>
+                {holderNote(seat.holder) && (
+                  <div className="checkin-note">{holderNote(seat.holder)}</div>
+                )}
                 <div className="hint">
                   {seat.ticketTypeName}・第 {seat.seatIndex + 1}/{seat.seatCount} 位・{seat.buyerEmail}
                 </div>

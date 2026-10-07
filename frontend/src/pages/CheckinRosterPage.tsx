@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, CHECKIN_TOKEN_KEY } from '../api/client';
 import type { CheckinSeat, RosterTeam } from '../api/types';
 import { TEAM_OPTIONS } from '../constants';
-import { formatTaipei, holderLabel } from '../tickets';
+import { formatTaipei, holderLabel, holderNote } from '../tickets';
 
 type Filter = 'all' | 'pending' | 'done';
 
@@ -42,6 +42,9 @@ function SeatRow({
     <div className="checkin-row">
       <div>
         <div className="checkin-name">{holderLabel(seat.holder)}</div>
+        {holderNote(seat.holder, { withTeam: false }) && (
+          <div className="checkin-note">{holderNote(seat.holder, { withTeam: false })}</div>
+        )}
         <div className="hint">
           {showTeam && `${seat.team}・`}
           {seat.ticketTypeName}・第 {seat.seatIndex + 1}/{seat.seatCount} 位・{seat.buyerEmail}

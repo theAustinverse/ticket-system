@@ -32,6 +32,21 @@ export function holderLabel(holder: SeatHolder): string {
   return `${holder.name ?? '（未填寫姓名）'}（${ROLE_LABEL[holder.role]}）`;
 }
 
+/**
+ * The note under a seat's name: its 體系 and, for a group seat, how it relates
+ * to the group — "里歐・夥伴", "里歐・王小明的親友". Empty when there is neither.
+ * A group member whose marking was never filled in says so, since that is
+ * what the leader still has to do.
+ */
+export function holderNote(
+  holder: { team: string | null; relation: string | null; role: SeatRole },
+  { withTeam = true, flagUnfilled = true } = {},
+): string {
+  const relation =
+    holder.relation ?? (flagUnfilled && holder.role === 'MEMBER' ? '身分未填' : null);
+  return [withTeam ? holder.team : null, relation].filter(Boolean).join('・');
+}
+
 export const SEAT_STATUS_LABEL: Record<SeatStatus, string> = {
   VALID: '可入場',
   CHECKED_IN: '已報到',

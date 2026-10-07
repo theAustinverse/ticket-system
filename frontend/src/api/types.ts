@@ -3,6 +3,10 @@ export interface GroupMember {
   name: string;
   contact: string;
   mealPreference: string;
+  /** 夥伴 or 夥伴的親友; absent on orders placed before it was asked. */
+  kind?: 'PARTNER' | 'RELATIVE';
+  /** For a 親友: the partner's seat (0 is the leader, 1..n the members). */
+  relativeOfSeat?: number;
 }
 
 /** One additional ticket (beyond the buyer's own) on a multi-quantity individual ticket type. */
@@ -170,6 +174,10 @@ export interface SeatHolder {
   name: string | null;
   role: SeatRole;
   mealPreference: string | null;
+  /** The order's 體系. */
+  team: string | null;
+  /** Group seats: "主揪", "夥伴" or "<夥伴>的親友"; null when never marked or not a group seat. */
+  relation: string | null;
 }
 
 export interface Seat {
@@ -213,6 +221,8 @@ export interface RosterTeam {
 export interface PublicTicket {
   holderName: string | null;
   role: SeatRole;
+  team: string | null;
+  relation: string | null;
   seatIndex: number;
   seatCount: number;
   status: SeatStatus;

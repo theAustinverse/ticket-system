@@ -3,6 +3,13 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import type { Companion, GroupMember, RegistrationInfo, TicketType } from '../api/types';
+import {
+  identityError,
+  identityPayload,
+  MemberIdentityFields,
+  partnerChoices,
+  type MemberKind,
+} from '../components/MemberIdentityFields';
 import { TEAM_OPTIONS } from '../constants';
 
 const COMPANION_RELATIONSHIPS = ['父母', '兄弟姊妹', '伴侶', '子女'] as const;
@@ -23,10 +30,12 @@ interface MemberDraft {
   contact: string;
   mealChoice: string;
   mealCustom: string;
+  kind: MemberKind;
+  relativeOf: string;
 }
 
 function emptyMemberDraft(): MemberDraft {
-  return { name: '', contact: '', mealChoice: '', mealCustom: '' };
+  return { name: '', contact: '', mealChoice: '', mealCustom: '', kind: '', relativeOf: '' };
 }
 
 function isMemberIncomplete(member: MemberDraft): boolean {
@@ -201,6 +210,13 @@ export function RegistrationPage() {
     }
 
     if (isGroup) {
+      // Unlike the rest of a member's details, who they are can't wait: the
+      // ticket says it, and a relative needs the partner it belongs to.
+      const identity = identityError(registrantName, members);
+      if (identity) {
+        setError(identity);
+        return;
+      }
       if (members.some(isMemberIncomplete)) {
         const proceed = window.confirm(
           '我敬愛的領導人，敬請於第二波次開放售票前將其餘名10位組員的名單上傳到系統上，如未上傳可能所有套票會自動釋出給第二波次的用戶搶購。',
@@ -228,6 +244,7 @@ export function RegistrationPage() {
       name: m.name.trim(),
       contact: m.contact.trim(),
       mealPreference: m.mealChoice === '其他' ? m.mealCustom.trim() : m.mealChoice,
+      ...identityPayload(m),
     }));
 
     const companionPayload: Companion[] = companions.map((c) => ({
@@ -388,6 +405,11 @@ export function RegistrationPage() {
                     onChange={(e) => updateMember(index, { name: e.target.value })}
                   />
                 </label>
+                <MemberIdentityFields
+                  draft={member}
+                  choices={partnerChoices(registrantName, members, index)}
+                  onChange={(patch) => updateMember(index, patch)}
+                />
                 <label>
                   聯絡方式（LINE ID 或電話）
                   <input

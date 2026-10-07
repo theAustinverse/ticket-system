@@ -2133,3 +2133,13 @@ button:disabled {
   .event-card:active, .admin-menu-card:active { transform: scale(0.985); }
   button:active:not(:disabled) { transform: translateY(1px) scale(0.98); }
 }
+
+/* The line under a seat's name: its 體系 and 夥伴 / 夥伴的親友. */
+.seat-note,
+.checkin-note {
+  display: block;
+  color: var(--gold-bright);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  margin: 0.15rem 0 0.25rem;
+}

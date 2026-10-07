@@ -226,14 +226,14 @@ describe('CheckinService', () => {
   });
 
   describe('publicTicket', () => {
-    it("shows the seat's own name and the event, never the buyer's email, phone or team", async () => {
+    it("shows the seat's own name, its team and the event, never the buyer's email, phone or name", async () => {
       prisma.ticket.findUnique.mockResolvedValue(makeTicket(makeOrder(), 2));
 
       const view = await service.publicTicket('tok-2');
 
-      expect(view).toMatchObject({ holderName: '王妹妹', eventName: 'TS年度盛會', status: 'VALID', seatCount: 3 });
+      expect(view).toMatchObject({ holderName: '王妹妹', team: '子揚', eventName: 'TS年度盛會', status: 'VALID', seatCount: 3 });
       const serialized = JSON.stringify(view);
-      for (const secret of ['ming@gmail.com', '0912345678', '子揚', '王小明']) {
+      for (const secret of ['ming@gmail.com', '0912345678', '王小明']) {
         expect(serialized).not.toContain(secret);
       }
     });

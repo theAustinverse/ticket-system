@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { PublicTicket } from '../api/types';
 import { TicketQr } from '../components/TicketQr';
-import { formatTaipei, holderLabel, SEAT_STATUS_LABEL } from '../tickets';
+import { formatTaipei, holderLabel, holderNote, SEAT_STATUS_LABEL } from '../tickets';
 
 /**
  * What a group member (or family member) opens from the link the buyer
@@ -49,7 +49,13 @@ export function PublicTicketPage() {
   return (
     <div className="page page-narrow public-ticket">
       <h1>入場票券</h1>
-      <p className="seat-name">{holderLabel({ name: ticket.holderName, role: ticket.role, mealPreference: null })}</p>
+      <p className="seat-name">{holderLabel({ name: ticket.holderName, role: ticket.role, mealPreference: null, team: ticket.team, relation: ticket.relation })}</p>
+      {/* The member opening their own link isn't told "身分未填": that is the leader's to fix. */}
+      {holderNote({ team: ticket.team, relation: ticket.relation, role: ticket.role }, { flagUnfilled: false }) && (
+        <p className="seat-note">
+          {holderNote({ team: ticket.team, relation: ticket.relation, role: ticket.role }, { flagUnfilled: false })}
+        </p>
+      )}
       <p className="hint">
         {ticket.eventName}・{ticket.ticketTypeName}・第 {ticket.seatIndex + 1} / {ticket.seatCount} 位
       </p>

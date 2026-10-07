@@ -154,6 +154,12 @@ Two independent surfaces. `AuthModule` issues JWTs for real user accounts (`JwtA
 
 Password reset (`forgotPassword`/`resetPassword` in `AuthService`) emails a 6-digit code held in Redis, mirroring registration verification. Two properties are deliberate: `forgotPassword` answers identically whether or not the address is registered (and doesn't await the email), so it can't be used to enumerate accounts — don't "helpfully" add a not-found error or surface a mail failure; and the wrong-guess counter is *not* reset when a new code is issued, so requesting codes can't buy more guesses. JWTs are stateless, so a reset does not revoke sessions already issued (up to `JWT_EXPIRES_IN`).
 
+### One own seat per account, and who a group seat is
+
+- An account may hold **one seat in its own name**: a group bundle (the leader is a seat) or an individual order not placed `buyingForFamily` counts as one; a family order counts as none. More seats are allowed only as `buyingForFamily` on a ticket type with `maxQuantityPerOrder`, with relatives named as themselves (not the buyer's name, no duplicates). It is enforced in `createOrder`: a cheap count before any stock moves, then the authoritative recount **inside the write**, under a per-account `pg_advisory_xact_lock` — two simultaneous orders would otherwise both count zero. Transfers (`acceptTransfer`) are deliberately **not** checked against it yet.
+- A named group member must be marked `PARTNER` (夥伴) or `RELATIVE` (親友); a relative carries `relativeOfSeat` (0 = leader, i = member i), which must be the leader or a named partner. Validated by `validateGroupMemberKinds` on create and on every member-list edit — which is also how orders from before the field existed get filled in. Only the seat number is stored; the name in "<partner>的親友" is resolved in `seatHolder()` at read time, so a corrected spelling follows.
+- `seatHolder()` also returns `team` (the leader's `registrantTeam`, shown on every seat) and `relation`; the share page, door scan, roster and QR list show them.
+
 ### Teams (體系)
 
 `Order.registrantTeam` and `User.team` are free strings in the DB, but the API only accepts values in `TEAM_OPTIONS` (`src/common/team-options.ts`, must equal `frontend/src/constants.ts` — a spec enforces it). Renaming or removing a team is a **data migration too**: old orders/profiles keep the old name and show up as a separate team in the back office (the 米克 → 爾森 rename skipped this). Update both tables in the same release.
