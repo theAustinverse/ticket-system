@@ -29,7 +29,7 @@ export function EntryGuidePage() {
         loading="lazy"
       />
       <p>
-        <Link to="/my-tickets">前往我的票卷</Link>
+        <Link to="/my-tickets">前往我的票券</Link>
       </p>
     </div>
   );

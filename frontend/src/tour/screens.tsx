@@ -128,7 +128,7 @@ export function OrderScreen() {
 export function MyTicketsScreen() {
   return (
     <div className="page tour-sim-page">
-      <h1>我的票卷</h1>
+      <h1>我的票券</h1>
       <div className="my-ticket-list">
         <div className="my-ticket-card" data-tour="ticket-card">
           <h2>單人早鳥票</h2>

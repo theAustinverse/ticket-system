@@ -217,7 +217,7 @@ export class EmailService {
         <div style="font-family: sans-serif; padding: 24px; color: #222;">
           <h2>票券轉讓邀請</h2>
           <p>${escapeHtml(d.fromEmail)} 想將一張「${escapeHtml(d.ticketTypeName)}」轉讓給您。</p>
-          <p>請登入系統，至「我的票卷」頁面查看並選擇接受或拒絕此邀請。</p>
+          <p>請登入系統，至「我的票券」頁面查看並選擇接受或拒絕此邀請。</p>
           <p style="margin-top: 16px; padding: 12px; background: #fff8e1; border-left: 4px solid #f5a623; color: #7a5c00;">${escapeHtml(TRANSFER_ADMIN_NOTICE)}</p>
         </div>
       `,

@@ -453,7 +453,7 @@ export function RegistrationPage() {
           <>
             <h2>張數</h2>
             <p className="hint">
-              可代替家人一同購買{ticketType.sharedStockKey ? '此早鳥票' : '此票卷'}，最多{' '}
+              可代替家人一同購買{ticketType.sharedStockKey ? '此早鳥票' : '此票券'}，最多{' '}
               {ticketType.maxQuantityPerOrder} 張
             </p>
             <label>

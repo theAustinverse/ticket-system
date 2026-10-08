@@ -62,7 +62,7 @@ function NavBar() {
           </button>
           <Link to="/entry-guide">🧸 入場教學</Link>
           <Link to="/contact">聯絡我們</Link>
-          <Link to="/my-tickets">我的票卷</Link>
+          <Link to="/my-tickets">我的票券</Link>
           <Link to="/profile">設定</Link>
           <button className="link-button" onClick={logout}>
             登出

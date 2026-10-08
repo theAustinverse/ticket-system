@@ -28,7 +28,7 @@ const COMPANION_RELATIONSHIPS = ['父母', '兄弟姊妹', '伴侶', '子女'] a
 
 /** Shown to both sides of a transfer while the early-bird batch is being reconciled by hand. */
 const TRANSFER_ADMIN_NOTICE =
-  '因早鳥波次搶票已結束，行政組進入訂單彙整階段，請有轉讓票卷者務必告知行政組夥伴，避免訂單轉讓不被承認，導致接收者的票卷不被承認，感謝配合。';
+  '因早鳥波次搶票已結束，行政組進入訂單彙整階段，請有轉讓票券者務必告知行政組夥伴，避免訂單轉讓不被承認，導致接收者的票券不被承認，感謝配合。';
 
 interface MemberDraft {
   name: string;
@@ -502,7 +502,7 @@ export function MyTicketsPage() {
     <div className="page">
       <h1 className="title-with-icon">
         <Icon3D name="ticket" motion="float" size={44} />
-        我的票卷
+        我的票券
       </h1>
       {error && <p className="error">{error}</p>}
       {incomingTransfers.length > 0 && (
