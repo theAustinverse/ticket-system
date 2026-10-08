@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 /** Kept as one constant so the wording lives in exactly one place. */
 export const NOTICE_TEXT =
-  '票劵收費統一繳交給領導人，凡有任何人以任何形式進行收費必為詐騙，請抱持謹慎！';
+  '票券收費統一繳交給領導人，凡有任何人以任何形式進行收費必為詐騙，請抱持謹慎！';
 
 /**
  * Scrolling anti-scam notice pinned above the navbar on public pages.
