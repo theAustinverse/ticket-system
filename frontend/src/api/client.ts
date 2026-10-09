@@ -14,6 +14,8 @@ import type {
   AdminTeamStat,
   AdminUser,
   ChatMessage,
+  HelpItem,
+  AdminHelpItem,
   Companion,
   EventDetail,
   EventSummary,
@@ -587,6 +589,34 @@ export const api = {
     a.click();
     URL.revokeObjectURL(url);
   },
+
+  listMyHelp: (authToken: string) =>
+    request<HelpItem[]>('/help/mine', { headers: authHeader(authToken) }),
+
+  askHelp: (authToken: string, question: string) =>
+    request<HelpItem>('/help/ask', {
+      method: 'POST',
+      headers: authHeader(authToken),
+      body: JSON.stringify({ question }),
+    }),
+
+  adminListHelp: (authToken: string, status?: string) =>
+    request<AdminHelpItem[]>(`/admin/help${status ? `?status=${status}` : ''}`, {
+      headers: authHeader(authToken),
+    }),
+
+  adminReplyHelp: (authToken: string, id: string, reply: string) =>
+    request<AdminHelpItem>(`/admin/help/${id}/reply`, {
+      method: 'POST',
+      headers: authHeader(authToken),
+      body: JSON.stringify({ reply }),
+    }),
+
+  adminDeleteHelp: (authToken: string, id: string) =>
+    request<{ deleted: boolean }>(`/admin/help/${id}`, {
+      method: 'DELETE',
+      headers: authHeader(authToken),
+    }),
 
   listChatMessages: (authToken: string) =>
     request<ChatMessage[]>('/chat/messages', {

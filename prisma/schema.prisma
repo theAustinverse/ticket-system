@@ -27,6 +27,7 @@ model User {
   lineId       String?
   phone        String?
   chatMessages ChatMessage[]
+  helpQuestions HelpQuestion[]
   transfersSent     TicketTransfer[] @relation("TransferFrom")
   transfersReceived TicketTransfer[] @relation("TransferTo")
   sponsorships      Sponsorship[]
@@ -361,4 +362,33 @@ model Contact {
   createdAt DateTime @default(now())
 
   @@index([sortOrder, createdAt])
+}
+
+enum HelpQuestionStatus {
+  /// The bot was confident and answered on its own.
+  BOT_ANSWERED
+  /// The bot was unsure; waiting for the admin (who was emailed).
+  ESCALATED
+  /// The admin has replied.
+  ADMIN_ANSWERED
+}
+
+/// A system-operation question put to the help bot (客服小幫手). Private to the
+/// asker and the admin — unlike ChatMessage, nobody else sees these.
+model HelpQuestion {
+  id          String             @id @default(cuid())
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  /// Snapshot of the asker's name at ask time, so the admin list stays readable.
+  askerName   String
+  question    String
+  /// What the bot said (null when it escalated without an answer).
+  botAnswer   String?
+  status      HelpQuestionStatus
+  adminReply  String?
+  repliedAt   DateTime?
+  createdAt   DateTime           @default(now())
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
 }

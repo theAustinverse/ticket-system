@@ -19,6 +19,13 @@ const FROM_ADDRESS =
  * way a missing RESEND_API_KEY behaves — never a hardcoded recipient.
  */
 const TRANSFER_ADMIN_EMAIL = process.env.TRANSFER_ADMIN_EMAIL;
+/**
+ * Where help-bot escalations go. Same rule as above: no hardcoded fallback
+ * address; unset falls back to TRANSFER_ADMIN_EMAIL (same admin), and if that
+ * is unset too the question is still saved and shows up on the admin page.
+ */
+const HELP_ADMIN_EMAIL = process.env.HELP_ADMIN_EMAIL ?? TRANSFER_ADMIN_EMAIL;
+const SITE_URL = process.env.FRONTEND_URL ?? 'https://ts-annual-event.com';
 
 /**
  * Every field below (name, LINE ID, meal preference, etc.) is user-supplied
@@ -308,6 +315,50 @@ export class EmailService {
       this.logger.error(
         `Failed to send transfer admin notice email: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * Tells the admin the help bot could not answer a question. Best-effort like
+   * every other mail here: the question is already stored and listed at
+   * /admin/help, so a skipped or failed send loses nothing.
+   */
+  async sendHelpEscalationNotice(d: {
+    askerName: string;
+    askerEmail: string;
+    question: string;
+  }): Promise<void> {
+    if (!this.resend) {
+      this.logger.warn('RESEND_API_KEY not set — skipping help escalation email');
+      return;
+    }
+    if (!HELP_ADMIN_EMAIL) {
+      this.logger.warn(
+        'HELP_ADMIN_EMAIL not set — skipping help escalation email. ' +
+          'The question is saved and listed on the admin help page.',
+      );
+      return;
+    }
+
+    const { error } = await this.resend.emails.send({
+      from: FROM_ADDRESS,
+      to: HELP_ADMIN_EMAIL,
+      subject: '【TS年度盛會】客服小幫手有問題需要你回覆',
+      html: `
+        <div style="font-family: sans-serif; padding: 24px; color: #222;">
+          <h2>小幫手無法回答的問題</h2>
+          <p>・提問者：${escapeHtml(d.askerName)}（${escapeHtml(d.askerEmail)}）</p>
+          <p>・問題：</p>
+          <blockquote style="border-left: 3px solid #c9a24b; margin: 0; padding: 4px 12px;">
+            ${escapeHtml(d.question).replace(/\n/g, '<br>')}
+          </blockquote>
+          <p><a href="${SITE_URL}/admin/help">前往後台回覆</a></p>
+        </div>
+      `,
+    });
+
+    if (error) {
+      this.logger.error(`Failed to send help escalation email: ${error.message}`);
     }
   }
 }

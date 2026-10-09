@@ -366,3 +366,26 @@ export interface AdminSponsorshipList {
   };
   sponsorships: AdminSponsorship[];
 }
+
+export interface HelpItem {
+  id: string;
+  question: string;
+  status: 'BOT_ANSWERED' | 'ESCALATED' | 'ADMIN_ANSWERED';
+  /** Admin's reply if there is one, else the bot's; null while waiting on the admin. */
+  answer: string | null;
+  answeredBy: 'BOT' | 'ADMIN' | null;
+  createdAt: string;
+  repliedAt: string | null;
+}
+
+export interface AdminHelpItem {
+  id: string;
+  askerName: string;
+  user: { email: string };
+  question: string;
+  botAnswer: string | null;
+  status: HelpItem['status'];
+  adminReply: string | null;
+  createdAt: string;
+  repliedAt: string | null;
+}

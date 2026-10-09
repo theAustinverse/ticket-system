@@ -4,6 +4,7 @@ import { CinematicBackground } from './components/CinematicBackground';
 import { Prologue } from './components/Prologue';
 import { BackgroundMusic } from './components/BackgroundMusic';
 import { ChatWidget } from './components/ChatWidget';
+import { HelpWidget } from './components/HelpWidget';
 import { LoginPage } from './pages/LoginPage';
 import { EventListPage } from './pages/EventListPage';
 import { EventDetailPage } from './pages/EventDetailPage';
@@ -36,6 +37,7 @@ const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage').then(
 const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })));
 const AdminOrdersPage = lazy(() => import('./pages/AdminOrdersPage').then((m) => ({ default: m.AdminOrdersPage })));
 const AdminEventsPage = lazy(() => import('./pages/AdminEventsPage').then((m) => ({ default: m.AdminEventsPage })));
+const AdminHelpPage = lazy(() => import('./pages/AdminHelpPage').then((m) => ({ default: m.AdminHelpPage })));
 const AdminChatPage = lazy(() => import('./pages/AdminChatPage').then((m) => ({ default: m.AdminChatPage })));
 const AdminAiImagePage = lazy(() => import('./pages/AdminAiImagePage').then((m) => ({ default: m.AdminAiImagePage })));
 const Lab3DPage = lazy(() => import('./pages/Lab3DPage').then((m) => ({ default: m.Lab3DPage })));
@@ -143,6 +145,7 @@ export function App() {
       {!isBareRoute && <Prologue />}
       {!isBareRoute && <BackgroundMusic />}
       {!isAdminRoute && !isBareRoute && <ChatWidget />}
+      {!isAdminRoute && !isBareRoute && <HelpWidget />}
       {!isAdminRoute && !isBareRoute && <GuidedTour />}
       {!isAdminRoute && !isBareRoute && <NoticeMarquee />}
       {isCheckinRoute ? <CheckinNavBar /> : isAdminRoute ? <AdminNavBar /> : <NavBar />}
@@ -172,6 +175,7 @@ export function App() {
         <Route path="/admin/events" element={<AdminEventsPage />} />
         <Route path="/admin/contacts" element={<AdminContactsPage />} />
         <Route path="/admin/sponsorships" element={<AdminSponsorshipsPage />} />
+        <Route path="/admin/help" element={<AdminHelpPage />} />
         <Route path="/admin/chat" element={<AdminChatPage />} />
         <Route path="/admin/ai-image" element={<AdminAiImagePage />} />
         {/* Not linked from any navbar — internal-only POC route. */}

@@ -37,6 +37,10 @@ export function AdminDashboardPage() {
           <h2>聯絡窗口管理</h2>
           <p className="hint">設定首頁與「聯絡我們」頁公開顯示的窗口（姓名、LINE、Email）</p>
         </Link>
+        <Link to="/admin/help" className="admin-menu-card">
+          <h2>客服小幫手問題</h2>
+          <p className="hint">小幫手答不出來的使用者提問，在這裡查看並回覆</p>
+        </Link>
         <Link to="/admin/chat" className="admin-menu-card">
           <h2>心情便利貼管理</h2>
           <p className="hint">瀏覽使用者留言、刪除不當內容</p>
