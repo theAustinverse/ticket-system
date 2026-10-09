@@ -157,7 +157,7 @@ Three admin writes exist for fixing data after the fact; all record an `OrderHis
 
 ### Public contact people
 
-`Contact` rows (`src/modules/contact/`) are shown to **every visitor**, signed in or not — home page box, `/contact` page. Nothing in them is private, so the public and admin lists are the same query; don't add a field there that isn't meant for the whole internet. The LINE field takes a plain LINE ID or an `https://` link: the service refuses any other scheme (`javascript:`, `data:`, `http:`), and `ContactList.tsx` only turns a value into an `href` when it is https — keep both checks. Admin edits (`/admin/contacts`) don't write `OrderHistory`: a contact belongs to no order.
+`Contact` rows (`src/modules/contact/`) are shown to **every visitor**, signed in or not — home page box, `/contact` page. Nothing in them is private, so the public and admin lists are the same query; don't add a field there that isn't meant for the whole internet. The LINE field takes a plain LINE ID or an `https://` link: the service refuses any other scheme (`javascript:`, `data:`, `http:`), and `ContactList.tsx` only turns a value into an `href` when it is https — keep both checks. Admin edits (`/admin/contacts`) don't write `OrderHistory`: a contact belongs to no order. The official LINE link above the list is not a `Contact` row: it is the `OFFICIAL_LINE_URL` constant in `frontend/src/constants.ts` (https only), so changing it is a code change and it shows even when no contact people exist.
 
 ### Auth
 

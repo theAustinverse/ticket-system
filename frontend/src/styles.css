@@ -2431,3 +2431,36 @@ button:disabled {
   .reveal { transition: none; }
   .home-scroll-hint i { animation: none; }
 }
+
+/* official LINE link */
+.official-line {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding: 0.9rem 1.1rem;
+  background: linear-gradient(160deg, rgba(92, 15, 22, 0.55), rgba(6, 4, 3, 0.8));
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  color: var(--paper);
+  text-decoration: none;
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+.official-line:hover {
+  border-color: var(--gold-bright);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.official-line-badge {
+  flex: none;
+  padding: 0.35rem 0.7rem;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold) 60%, var(--gold-dim));
+  color: #2a1a05;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.official-line-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.official-line-text strong { color: var(--gold-bright); font-size: 1.05rem; }
+.official-line-text small { color: var(--paper-dim); font-size: 0.82rem; }
+.official-line-go { flex: none; color: var(--gold-bright); font-size: 1.4rem; }
