@@ -17,6 +17,12 @@ export const RECENT_DAYS = 3;
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: '2026-10-09-tour-update',
+    date: '2026-10-09',
+    title: '使用教學更新',
+    body: '上方的「📖 使用教學」更新成最新版：新增團體票「夥伴／夥伴的親友」填法、一人一張本人票的規則、轉讓與退票的限制，也介紹了小額贊助、聯絡我們和客服小幫手。',
+  },
+  {
     id: '2026-10-09-help-bot',
     date: '2026-10-09',
     title: '客服小幫手上線',

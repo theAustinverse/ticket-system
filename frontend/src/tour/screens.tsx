@@ -6,7 +6,7 @@
  * tutorial never has to touch — or risk — the real purchase-flow code.
  */
 
-export type SimScreen = 'registration' | 'queue' | 'order' | 'mytickets';
+export type SimScreen = 'registration' | 'group' | 'queue' | 'order' | 'mytickets';
 
 export function RegistrationScreen() {
   return (
@@ -20,12 +20,14 @@ export function RegistrationScreen() {
 
         <div data-tour="reg-personal">
           <label>
-            姓名
+            姓名（僅限中文）
             <input value="王小明" readOnly />
           </label>
           <label>
-            所屬體系
-            <input value="德興體系" readOnly />
+            所屬系統/團隊
+            <select value="子揚" disabled>
+              <option>子揚</option>
+            </select>
           </label>
           <label>
             LINE ID
@@ -36,8 +38,10 @@ export function RegistrationScreen() {
             <input value="0912345678" readOnly />
           </label>
           <label>
-            用餐習慣
-            <input value="葷食" readOnly />
+            用餐需求
+            <select value="葷食" disabled>
+              <option>葷食</option>
+            </select>
           </label>
         </div>
 
@@ -52,20 +56,26 @@ export function RegistrationScreen() {
         </div>
 
         <div className="group-member-block" data-tour="reg-companion">
-          <p className="hint">第 2 張 · 親友資料</p>
+          <h4>第 2 張</h4>
           <label>
-            姓名
+            姓名（僅限中文）
             <input value="王大明" readOnly />
           </label>
           <label>
-            關係
+            與訂購人關係
             <select value="兄弟姊妹" disabled>
               <option>兄弟姊妹</option>
             </select>
           </label>
           <label>
-            用餐習慣
-            <input value="素食" readOnly />
+            用餐需求
+            <select value="素食" disabled>
+              <option>素食</option>
+            </select>
+          </label>
+          <label>
+            如為幫親友及子女代購請註明夥伴身份及所屬體系與相關聯絡方式
+            <input value="我的弟弟，子揚體系，LINE：da_ming" readOnly />
           </label>
         </div>
 
@@ -79,6 +89,55 @@ export function RegistrationScreen() {
         <button type="button" data-tour="reg-submit">
           下一步：進入排隊室
         </button>
+      </div>
+    </div>
+  );
+}
+
+export function GroupRegistrationScreen() {
+  return (
+    <div className="page page-narrow tour-sim-page">
+      <h1>報名資料</h1>
+      <p className="hint">團體早鳥票 · 第一波</p>
+      <div className="form">
+        <h2>團體票資料</h2>
+        <p className="hint">主揪者資訊即為上方填寫的個人資料，無需重複填寫</p>
+        <div>
+          <h3>其餘團體成員名單（共 2 位）</h3>
+          <div className="group-member-block" data-tour="group-members">
+            <h4>第 1 位成員</h4>
+            <label>
+              姓名
+              <input value="王大明" readOnly />
+            </label>
+            <label>
+              身分
+              <select value="PARTNER" disabled>
+                <option value="PARTNER">夥伴</option>
+              </select>
+            </label>
+          </div>
+          <div className="group-member-block" data-tour="group-relative">
+            <h4>第 2 位成員</h4>
+            <label>
+              姓名
+              <input value="王小華" readOnly />
+            </label>
+            <label>
+              身分
+              <select value="RELATIVE" disabled>
+                <option value="RELATIVE">夥伴的親友</option>
+              </select>
+            </label>
+            <label>
+              是哪一位夥伴的親友
+              <select value="1" disabled>
+                <option value="1">王大明</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <button type="button">下一步：進入排隊室</button>
       </div>
     </div>
   );
@@ -135,7 +194,7 @@ export function MyTicketsScreen() {
           <p className="hint">訂單編號：TS-2026-000123</p>
           <p className="hint">數量：2 張 · NT$ 4,400</p>
           <p>
-            狀態：<span className="badge" data-tour="ticket-status">已成立</span>
+            狀態：<span className="badge" data-tour="ticket-status">PAID</span>
           </p>
           <p className="hint" data-tour="ticket-refund-note">
             退票截止：2026/10/24 23:59 前可自行退票
@@ -156,6 +215,8 @@ export function SimScreenView({ screen }: { screen: SimScreen }) {
   switch (screen) {
     case 'registration':
       return <RegistrationScreen />;
+    case 'group':
+      return <GroupRegistrationScreen />;
     case 'queue':
       return <QueueScreen />;
     case 'order':
