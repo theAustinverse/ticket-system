@@ -2524,5 +2524,8 @@ button:disabled {
 }
 .changelog-list p { margin: 0.25rem 0 0; font-size: 0.9rem; color: var(--paper-dim); }
 .changelog-date { font-family: 'Noto Serif TC', serif; color: var(--gold); white-space: nowrap; }
-.changelog-popup { max-width: 480px; }
+.changelog-popup { max-width: 480px; overflow: hidden; }
 .changelog-popup .hint { margin: 0; }
+/* Only the list scrolls; the title and the 知道了 button stay put and are never squeezed. */
+.changelog-popup > * { flex: none; }
+.changelog-popup .changelog-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.2rem; }
