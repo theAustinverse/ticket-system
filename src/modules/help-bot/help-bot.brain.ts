@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { FAQ } from './faq';
 
@@ -7,7 +8,8 @@ export interface BotVerdict {
   answer: string | null;
 }
 
-const MODEL = process.env.HELP_BOT_MODEL ?? 'gemini-2.5-flash';
+const GEMINI_MODEL = process.env.HELP_BOT_MODEL ?? 'gemini-2.5-flash';
+const CLAUDE_MODEL = process.env.HELP_BOT_CLAUDE_MODEL ?? 'claude-opus-5-5';
 /** Fallback matcher: how many keyword hits an FAQ needs before we trust it. */
 const MIN_KEYWORD_SCORE = 1;
 
@@ -27,19 +29,32 @@ ${kb}`;
 }
 
 /**
- * Decides whether the bot can answer. With GEMINI_API_KEY set it asks the
- * model (constrained to the FAQ); without one — or if the call fails — it falls
- * back to keyword matching, and when even that finds nothing the question is
+ * Decides whether the bot can answer. Provider order: Claude when
+ * ANTHROPIC_API_KEY is set, else Gemini when GEMINI_API_KEY is set (each
+ * constrained to the FAQ); if neither is configured — or the call fails — it
+ * falls back to keyword matching, and when even that finds nothing the question is
  * escalated. Every failure path ends in "escalate", never in a guess.
  */
 @Injectable()
 export class HelpBotBrain {
   private readonly logger = new Logger(HelpBotBrain.name);
+  private readonly claude = process.env.ANTHROPIC_API_KEY
+    ? new Anthropic({ maxRetries: 1, timeout: 30_000 })
+    : null;
   private readonly client = process.env.GEMINI_API_KEY
     ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
     : null;
 
   async answer(question: string): Promise<BotVerdict> {
+    if (this.claude) {
+      try {
+        return await this.askClaude(question);
+      } catch (err) {
+        this.logger.warn(
+          `Claude help-bot call failed, falling back: ${(err as Error).message}`,
+        );
+      }
+    }
     if (this.client) {
       try {
         return await this.askModel(question);
@@ -52,9 +67,39 @@ export class HelpBotBrain {
     return this.matchKeywords(question);
   }
 
+  private async askClaude(question: string): Promise<BotVerdict> {
+    const response = await this.claude!.messages.create({
+      model: CLAUDE_MODEL,
+      // Thinking tokens count toward max_tokens; the visible JSON is tiny.
+      max_tokens: 2000,
+      system: systemPrompt(),
+      // Depth is tuned through effort; this is a lookup-style task.
+      output_config: {
+        effort: 'low',
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            properties: {
+              confident: { type: 'boolean' },
+              answer: { type: 'string' },
+            },
+            required: ['confident', 'answer'],
+            additionalProperties: false,
+          },
+        },
+      },
+      messages: [{ role: 'user', content: question }],
+    });
+    // A refusal, truncation or empty reply carries no usable text → escalate.
+    if (response.stop_reason !== 'end_turn') return { answer: null };
+    const text = response.content.find((b) => b.type === 'text');
+    return parseVerdict(text && text.type === 'text' ? text.text : '');
+  }
+
   private async askModel(question: string): Promise<BotVerdict> {
     const response = await this.client!.models.generateContent({
-      model: MODEL,
+      model: GEMINI_MODEL,
       config: {
         systemInstruction: systemPrompt(),
         responseMimeType: 'application/json',

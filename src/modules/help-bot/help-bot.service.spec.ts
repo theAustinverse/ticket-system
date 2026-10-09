@@ -141,3 +141,44 @@ describe('parseVerdict', () => {
     expect(parseVerdict('not json').answer).toBeNull();
   });
 });
+
+describe('HelpBotBrain with Claude', () => {
+  function brainWith(create: jest.Mock) {
+    const brain = new HelpBotBrain() as any;
+    brain.claude = { messages: { create } };
+    return brain as HelpBotBrain;
+  }
+  const reply = (text: string, stop_reason = 'end_turn') => ({
+    stop_reason,
+    content: [{ type: 'text', text }],
+  });
+
+  it('returns the answer when Claude is confident', async () => {
+    const create = jest
+      .fn()
+      .mockResolvedValue(reply('{"confident":true,"answer":"點退票"}'));
+    const res = await brainWith(create).answer('怎麼退票');
+    expect(res.answer).toBe('點退票');
+    const arg = create.mock.calls[0][0];
+    expect(arg.model).toBe('claude-opus-5-5');
+    expect(arg.system).toContain('知識庫');
+    expect(arg.messages).toEqual([{ role: 'user', content: '怎麼退票' }]);
+  });
+
+  it('escalates when Claude is unsure, refuses, or is truncated', async () => {
+    for (const r of [
+      reply('{"confident":false,"answer":""}'),
+      reply('{"confident":true,"answer":"x"}', 'refusal'),
+      reply('{"confident":true,"answer":"x"}', 'max_tokens'),
+    ]) {
+      expect((await brainWith(jest.fn().mockResolvedValue(r)).answer('q')).answer).toBeNull();
+    }
+  });
+
+  it('falls back to keyword matching when the API call throws', async () => {
+    const res = await brainWith(jest.fn().mockRejectedValue(new Error('down'))).answer('怎麼退票');
+    expect(res.answer).toContain('退票');
+    const none = await brainWith(jest.fn().mockRejectedValue(new Error('down'))).answer('今天天氣');
+    expect(none.answer).toBeNull();
+  });
+});
