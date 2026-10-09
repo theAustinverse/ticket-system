@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -53,6 +55,8 @@ function stockKeyFor(ticketType: {
 
 @Injectable()
 export class OrderService {
+  private readonly logger = new Logger(OrderService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventory: InventoryService,
@@ -88,11 +92,61 @@ export class OrderService {
     '每個帳號只能有一張本人的票。若是幫親友代訂，請勾選「幫親友代訂」並填寫親友的姓名';
 
   /**
+   * Companion names must be Chinese, never the buyer's own, and never
+   * repeated. The extra seats are for relatives and friends, named as
+   * themselves: the buyer's own name is the one-seat rule's loophole. Used
+   * both when buying and when editing the registration afterwards.
+   */
+  private static assertCompanionNames(
+    registrantName: string,
+    companions: { name: string }[],
+  ) {
+    const buyerName = registrantName.trim();
+    const seen = new Set<string>();
+    for (const companion of companions) {
+      if (!CHINESE_NAME_REGEX.test(companion.name)) {
+        throw new BadRequestException(
+          'companion name must be Chinese characters only',
+        );
+      }
+      const name = companion.name.trim();
+      if (name === buyerName) {
+        throw new BadRequestException(
+          '親友的姓名不能和您本人相同，請填寫親友自己的姓名',
+        );
+      }
+      if (seen.has(name)) {
+        throw new BadRequestException(`親友姓名「${name}」重複填寫`);
+      }
+      seen.add(name);
+    }
+  }
+
+  /**
    * This system only handles the ticket-grabbing/reservation itself — there
    * is no in-app payment step. A created order is immediately the final
    * successful state (PAID), and a confirmation email goes out right away.
    */
   async createOrder(userId: string, dto: CreateOrderDto, queueToken?: string) {
+    if (!queueToken) return this.placeOrder(userId, dto, queueToken);
+
+    // One order at a time per admission. Without this, N simultaneous
+    // requests carrying the same admitted token all pass AdmissionGuard
+    // before the first one spends it, and a family order (which isn't
+    // serialised by the own-seat lock) would succeed N times.
+    if (!(await this.queueRoomService.beginOrder(dto.ticketTypeId, queueToken))) {
+      throw new ConflictException('這個排隊資格正在下單中，請勿重複送出');
+    }
+    try {
+      return await this.placeOrder(userId, dto, queueToken);
+    } finally {
+      await this.queueRoomService
+        .endOrder(dto.ticketTypeId, queueToken)
+        .catch(() => {});
+    }
+  }
+
+  private async placeOrder(userId: string, dto: CreateOrderDto, queueToken?: string) {
     // A JWT can be structurally valid (e.g. the back office's admin token)
     // without corresponding to a real customer account. Fail clearly here
     // instead of letting it surface as a raw FK-constraint 500 later.
@@ -220,27 +274,7 @@ export class OrderService {
               `companions must list exactly ${requiredCompanions} entries`,
             );
           }
-          const buyerName = dto.registrantName.trim();
-          const seen = new Set<string>();
-          for (const companion of dto.companions) {
-            if (!CHINESE_NAME_REGEX.test(companion.name)) {
-              throw new BadRequestException(
-                'companion name must be Chinese characters only',
-              );
-            }
-            // The extra seats are for relatives and friends, named as
-            // themselves: the buyer's own name is the one-seat rule's loophole.
-            const name = companion.name.trim();
-            if (name === buyerName) {
-              throw new BadRequestException(
-                '親友的姓名不能和您本人相同，請填寫親友自己的姓名',
-              );
-            }
-            if (seen.has(name)) {
-              throw new BadRequestException(`親友姓名「${name}」重複填寫`);
-            }
-            seen.add(name);
-          }
+          OrderService.assertCompanionNames(dto.registrantName, dto.companions);
         }
       } else {
         // Ordinary individual ticket type: capped at 1 per order.
@@ -360,11 +394,27 @@ export class OrderService {
         process.env.LOAD_TEST_MODE === 'true' &&
         /^loadtest\d+@gmail\.com$/i.test(user.email);
 
+      // Spend the admission — otherwise it stays valid for the rest of its
+      // TTL and the same admitted queue token can be replayed against this
+      // endpoint in a loop, letting one admitted buyer take far more than
+      // their share while everyone else is still waiting in line. Best-effort:
+      // the order has already succeeded, so a failure here shouldn't fail the
+      // request (the token will still expire on its own via its TTL).
+      if (queueToken) {
+        await this.queueRoomService
+          .consumeAdmission(dto.ticketTypeId, queueToken)
+          .catch(() => {});
+      }
+
       // Best-effort: a failed confirmation email shouldn't fail the order
       // that already succeeded. Skipped for synthetic load-test accounts,
       // same reasoning as the registration-code bypass in AuthService.
       if (!isLoadTest) {
-        await this.emailService.sendOrderConfirmation(user.email, {
+        // Not awaited: the buyer shouldn't wait on the mail provider, and a
+        // throw here must never reach the catch below (which would release
+        // the group claim of an order that already exists).
+        void Promise.resolve(
+          this.emailService.sendOrderConfirmation(user.email, {
           orderId: order.id,
           ticketTypeName: ticketType.name,
           quantity: order.quantity,
@@ -381,19 +431,8 @@ export class OrderService {
           companions: order.companions as unknown as Companion[] | null,
           buyingForFamily: order.buyingForFamily,
           childSeatCount: order.childSeatCount,
-        });
-      }
-
-      // Spend the admission — otherwise it stays valid for the rest of its
-      // TTL and the same admitted queue token can be replayed against this
-      // endpoint in a loop, letting one admitted buyer take far more than
-      // their share while everyone else is still waiting in line. Best-effort:
-      // the order has already succeeded, so a failure here shouldn't fail the
-      // request (the token will still expire on its own via its TTL).
-      if (queueToken) {
-        await this.queueRoomService
-          .consumeAdmission(dto.ticketTypeId, queueToken)
-          .catch(() => {});
+          }),
+        ).catch(() => {});
       }
 
       return order;
@@ -414,7 +453,9 @@ export class OrderService {
     if (order.userId !== userId) {
       throw new ForbiddenException('This order does not belong to you');
     }
-    return order;
+    // adminNote is the back office's private memo about the order.
+    const { adminNote: _adminNote, ...visible } = order;
+    return visible;
   }
 
   /**
@@ -552,13 +593,10 @@ export class OrderService {
             `companions must list exactly ${requiredCompanions} entries`,
           );
         }
-        for (const companion of dto.companions) {
-          if (!CHINESE_NAME_REGEX.test(companion.name)) {
-            throw new BadRequestException(
-              'companion name must be Chinese characters only',
-            );
-          }
-        }
+        // Same rules as at purchase: editing must not be a way around them
+        // (e.g. renaming a relative to the buyer's own name to hold a second
+        // seat that the one-own-seat count never sees).
+        OrderService.assertCompanionNames(dto.registrantName, dto.companions);
       }
     }
 
@@ -627,7 +665,7 @@ export class OrderService {
       orderBy: { createdAt: 'desc' },
     });
     return Promise.all(
-      orders.map(async ({ tickets, ...order }) => ({
+      orders.map(async ({ tickets, adminNote: _adminNote, ...order }) => ({
         ...order,
         isFirstWave: await this.isFirstWaveBatch(
           order.ticketType.sessionId,
@@ -723,9 +761,22 @@ export class OrderService {
       throw new BadRequestException('You cannot transfer a ticket to yourself');
     }
 
-    const transfer = await this.prisma.ticketTransfer.create({
-      data: { orderId, fromUserId: userId, toUserId: toUser.id },
-    });
+    let transfer;
+    try {
+      transfer = await this.prisma.ticketTransfer.create({
+        data: { orderId, fromUserId: userId, toUserId: toUser.id },
+      });
+    } catch (error: any) {
+      // The findFirst above is only a courtesy: two simultaneous requests
+      // both pass it. A partial unique index (one PENDING row per order) is
+      // what really guarantees a single open invitation.
+      if (error?.code === 'P2002') {
+        throw new BadRequestException(
+          'This order already has a pending transfer — cancel it first',
+        );
+      }
+      throw error;
+    }
 
     await recordOrderHistory(this.prisma, {
       orderId,
@@ -751,7 +802,19 @@ export class OrderService {
     return this.prisma.ticketTransfer.findMany({
       where: { toUserId: userId, status: 'PENDING' },
       include: {
-        order: { include: { ticketType: { include: { session: true } } } },
+        // The recipient hasn't accepted anything yet, so they get only what
+        // the invitation needs — not the sender's phone, LINE ID, member
+        // contacts or the back office's note.
+        order: {
+          select: {
+            id: true,
+            quantity: true,
+            totalAmount: true,
+            mealPreference: true,
+            buyingForFamily: true,
+            ticketType: { include: { session: true } },
+          },
+        },
         fromUser: { select: { email: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -792,6 +855,11 @@ export class OrderService {
     if (transfer.order.status !== 'PAID') {
       throw new BadRequestException('This order is no longer active');
     }
+    // An invitation sent before the deadline can't be accepted after it.
+    const transferEndAt = transfer.order.ticketType.batch?.transferEndAt;
+    if (transferEndAt && Date.now() >= transferEndAt.getTime()) {
+      throw new BadRequestException('轉讓功能已截止');
+    }
 
     const previousOwnerId = transfer.order.userId;
     const { ticketType } = transfer.order;
@@ -822,29 +890,51 @@ export class OrderService {
     // ownership change. The previous owner has seen — and may have
     // screenshotted or forwarded — every QR on this order; without this,
     // those old codes would still get someone through the door.
-    const seats = await this.prisma.ticket.findMany({
-      where: { orderId: transfer.orderId },
-      select: { id: true },
-    });
-
+    //
+    // Every write below is conditional, and the transaction aborts unless it
+    // really changed one row: the checks above ran a moment ago on data that
+    // someone else may have changed since (a second invitation for the same
+    // order accepted first, the sender cancelling the transfer or the order),
+    // and an unconditional update would hand the ticket over anyway.
     let updatedOrder;
     try {
-      [, updatedOrder] = await this.prisma.$transaction([
-        this.prisma.ticketTransfer.update({
-          where: { id: transferId },
+      updatedOrder = await this.prisma.$transaction(async (tx) => {
+        const accepted = await tx.ticketTransfer.updateMany({
+          where: { id: transferId, status: 'PENDING' },
           data: { status: 'ACCEPTED', respondedAt: new Date() },
-        }),
-        this.prisma.order.update({
-          where: { id: transfer.orderId },
+        });
+        if (accepted.count !== 1) {
+          throw new BadRequestException('This transfer is no longer pending');
+        }
+        const moved = await tx.order.updateMany({
+          where: {
+            id: transfer.orderId,
+            userId: transfer.fromUserId,
+            status: 'PAID',
+          },
           data: { userId },
-        }),
-        ...seats.map((seat) =>
-          this.prisma.ticket.update({
+        });
+        if (moved.count !== 1) {
+          throw new BadRequestException('This order is no longer active');
+        }
+        const seats = await tx.ticket.findMany({
+          where: { orderId: transfer.orderId },
+          select: { id: true },
+        });
+        for (const seat of seats) {
+          await tx.ticket.update({
             where: { id: seat.id },
             data: { token: newTicketToken() },
-          }),
-        ),
-      ]);
+          });
+        }
+        // The ticket has a new owner: any other invitation still open for it
+        // is void, and must not be acceptable by someone else later.
+        await tx.ticketTransfer.updateMany({
+          where: { orderId: transfer.orderId, status: 'PENDING' },
+          data: { status: 'CANCELLED', respondedAt: new Date() },
+        });
+        return tx.order.findUniqueOrThrow({ where: { id: transfer.orderId } });
+      });
     } catch (error) {
       // Ownership never moved — don't leave the recipient holding a claim
       // against a bundle they don't own.
@@ -879,7 +969,8 @@ export class OrderService {
     // notice shouldn't fail a transfer that already succeeded.
     await this.emailService.sendTransferAdminNotice(notice).catch(() => {});
 
-    return updatedOrder;
+    const { adminNote: _adminNote, ...visible } = updatedOrder;
+    return visible;
   }
 
   async rejectTransfer(userId: string, transferId: string) {
@@ -912,9 +1003,18 @@ export class OrderService {
     if (transfer.status !== 'PENDING') {
       throw new BadRequestException('This transfer is no longer pending');
     }
-    const updated = await this.prisma.ticketTransfer.update({
-      where: { id: transferId },
+    // Conditional on still PENDING: the recipient may be accepting at this
+    // very moment, and a plain update would overwrite ACCEPTED with the
+    // sender's CANCELLED while the ticket has already changed hands.
+    const { count } = await this.prisma.ticketTransfer.updateMany({
+      where: { id: transferId, status: 'PENDING' },
       data: { status: nextStatus, respondedAt: new Date() },
+    });
+    if (count !== 1) {
+      throw new BadRequestException('This transfer is no longer pending');
+    }
+    const updated = await this.prisma.ticketTransfer.findUniqueOrThrow({
+      where: { id: transferId },
     });
 
     await recordOrderHistory(this.prisma, {
@@ -973,7 +1073,7 @@ export class OrderService {
     // double-click, or a retried request), releasing its stock back to the
     // pool twice for a single seat.
     const { count } = await this.prisma.order.updateMany({
-      where: { id: orderId, status: 'PAID' },
+      where: { id: orderId, userId, status: 'PAID' },
       data: { status: 'CANCELLED' },
     });
     if (count === 0) {
@@ -991,12 +1091,6 @@ export class OrderService {
       } else {
         await this.inventory.releaseStock(stockKey, order.quantity);
       }
-      if (order.ticketType.fixedQuantity !== null) {
-        await this.inventory.releaseGroupPurchaseClaim(
-          order.ticketType.sessionId,
-          userId,
-        );
-      }
     } catch (error) {
       // Best-effort revert so a failed stock release doesn't silently leave
       // the order CANCELLED with its seat never returned to the pool. A
@@ -1007,6 +1101,19 @@ export class OrderService {
         .update({ where: { id: orderId }, data: { status: 'PAID' } })
         .catch(() => {});
       throw error;
+    }
+    // Once the seats are back in the pool the cancellation is final: failing
+    // to free the leader's one-bundle claim must NOT put the order back to
+    // PAID (that would sell the same seats twice). The worst case is that
+    // this user can't buy another bundle until the claim is cleared by hand.
+    if (order.ticketType.fixedQuantity !== null) {
+      await this.inventory
+        .releaseGroupPurchaseClaim(order.ticketType.sessionId, userId)
+        .catch((error) =>
+          this.logger.error(
+            `Order ${orderId} cancelled and stock released, but the group-purchase claim for user ${userId} was not: ${error?.message ?? error}`,
+          ),
+        );
     }
 
     await recordOrderHistory(this.prisma, {

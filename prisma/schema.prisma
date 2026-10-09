@@ -237,6 +237,11 @@ enum OrderStatus {
 /// OrderService, not the DB) — the recipient must accept before Order.userId
 /// actually changes; nothing moves on creation alone.
 model TicketTransfer {
+  /// A partial unique index, "TicketTransfer_orderId_pending_key" on (orderId)
+  /// WHERE status = 'PENDING', allows one open invitation per order. It is
+  /// defined only in migration 20261009150000 (Prisma's schema language can't
+  /// express partial indexes), so `prisma migrate dev` may offer to drop it:
+  /// don't accept that.
   id          String               @id @default(cuid())
   /// Cascades with the order/either party on hard delete, same as
   /// OrderHistory. These were ON DELETE RESTRICT, which made an order (or a

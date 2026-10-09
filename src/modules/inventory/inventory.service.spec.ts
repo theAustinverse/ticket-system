@@ -21,6 +21,16 @@ describe('InventoryService', () => {
       get: jest.fn(),
       incrby: jest.fn(),
       decr: jest.fn(),
+      // A MULTI/EXEC chain: records the queued commands, runs them on exec().
+      multi: jest.fn(() => {
+        const queued: [string, unknown[]][] = [];
+        const chain: any = {
+          incrby: (...args: unknown[]) => (queued.push(['incrby', args]), chain),
+          decr: (...args: unknown[]) => (queued.push(['decr', args]), chain),
+          exec: jest.fn(async () => queued),
+        };
+        return chain;
+      }),
     };
     service = new InventoryService(redisMock);
     await service.onModuleInit();
@@ -147,7 +157,15 @@ describe('InventoryService', () => {
 
   it('releaseGroupStock increments the pool and decrements the group counter', async () => {
     await service.releaseGroupStock('pool1', 'tt-group', 11);
-    expect(redisMock.incrby).toHaveBeenCalledWith('stock:pool1', 11);
-    expect(redisMock.decr).toHaveBeenCalledWith('groupcount:tt-group');
+    // Both commands travel in one MULTI/EXEC, so they land together or not at all —
+    // never "seats back in the pool, bundle slot still taken".
+    expect(redisMock.multi).toHaveBeenCalledTimes(1);
+    const chain = redisMock.multi.mock.results[0].value;
+    expect(await chain.exec.mock.results[0].value).toEqual([
+      ['incrby', ['stock:pool1', 11]],
+      ['decr', ['groupcount:tt-group']],
+    ]);
+    expect(redisMock.incrby).not.toHaveBeenCalled();
+    expect(redisMock.decr).not.toHaveBeenCalled();
   });
 });

@@ -200,8 +200,15 @@ export class InventoryService implements OnModuleInit {
     ticketTypeId: string,
     quantity: number,
   ): Promise<void> {
-    await this.redis.incrby(this.stockKey(stockPoolKey), quantity);
-    await this.redis.decr(this.groupCountKey(ticketTypeId));
+    // One MULTI/EXEC, not two round trips: if the second command failed on
+    // its own, the seats would be back in the pool while the bundle-count
+    // slot stayed taken (and a caller that then rolled the order back to PAID
+    // would leave the same seats sellable twice).
+    await this.redis
+      .multi()
+      .incrby(this.stockKey(stockPoolKey), quantity)
+      .decr(this.groupCountKey(ticketTypeId))
+      .exec();
   }
 
   /**

@@ -51,22 +51,25 @@ export class HelpBotBrain {
     // (being "answered") no escalation email for something that isn't a
     // system question.
     if (isLoveQuestion(question)) return { answer: LOVE_REPLY };
+    // With a model configured, a failed call means "I couldn't judge this" —
+    // escalate. Falling back to keyword matching there would let a one-word
+    // hit (e.g. 退費 in a complaint about a double charge) produce a confident
+    // canned answer exactly when the real judge is down. Keyword matching is
+    // only the mode for a deployment with no model key at all.
     if (this.claude) {
       try {
         return await this.askClaude(question);
       } catch (err) {
-        this.logger.warn(
-          `Claude help-bot call failed, falling back: ${(err as Error).message}`,
-        );
+        this.logger.warn(`Claude help-bot call failed, escalating: ${(err as Error).message}`);
+        if (!this.client) return { answer: null };
       }
     }
     if (this.client) {
       try {
         return await this.askModel(question);
       } catch (err) {
-        this.logger.warn(
-          `Gemini help-bot call failed, using keyword fallback: ${(err as Error).message}`,
-        );
+        this.logger.warn(`Gemini help-bot call failed, escalating: ${(err as Error).message}`);
+        return { answer: null };
       }
     }
     return this.matchKeywords(question);

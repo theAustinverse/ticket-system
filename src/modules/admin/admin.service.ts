@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import ExcelJS from 'exceljs';
@@ -336,10 +337,17 @@ export class AdminService {
     }
 
     if (order.ticketType.fixedQuantity !== null) {
-      await this.inventory.releaseGroupPurchaseClaim(
-        order.ticketType.sessionId,
-        order.userId,
-      );
+      // The seats are already back in the pool at this point, so a failure
+      // here must not make the caller roll the order back to active (that
+      // would let the same seats be sold twice). Log it; at worst this user
+      // can't buy another bundle until the claim is cleared by hand.
+      await this.inventory
+        .releaseGroupPurchaseClaim(order.ticketType.sessionId, order.userId)
+        .catch((error) =>
+          new Logger(AdminService.name).error(
+            `Stock released but the group-purchase claim for user ${order.userId} was not: ${error?.message ?? error}`,
+          ),
+        );
     }
   }
 

@@ -3,6 +3,7 @@ import { HelpBotBrain, parseVerdict } from './help-bot.brain';
 import { LOVE_REPLY, isLoveQuestion } from './faq';
 import {
   HelpBotService,
+  MAX_ESCALATION_EMAILS_PER_HOUR,
   MAX_QUESTIONS_PER_DAY,
 } from './help-bot.service';
 
@@ -11,8 +12,19 @@ describe('HelpBotService', () => {
   let brain: { answer: jest.Mock };
   let email: { sendHelpEscalationNotice: jest.Mock };
   let service: HelpBotService;
+  let counters: Map<string, number>;
+  let redis: any;
 
   beforeEach(() => {
+    counters = new Map();
+    redis = {
+      incr: jest.fn(async (key: string) => {
+        const next = (counters.get(key) ?? 0) + 1;
+        counters.set(key, next);
+        return next;
+      }),
+      expire: jest.fn(async () => 1),
+    };
     prisma = {
       helpQuestion: {
         count: jest.fn().mockResolvedValue(0),
@@ -34,7 +46,7 @@ describe('HelpBotService', () => {
     };
     brain = { answer: jest.fn() };
     email = { sendHelpEscalationNotice: jest.fn().mockResolvedValue(undefined) };
-    service = new HelpBotService(prisma, brain as any, email as any);
+    service = new HelpBotService(prisma, brain as any, email as any, redis);
   });
 
   it('stores a confident bot answer and does NOT email the admin', async () => {
@@ -77,12 +89,47 @@ describe('HelpBotService', () => {
     expect(res.item.status).toBe(HelpQuestionStatus.ESCALATED);
   });
 
-  it('refuses past the daily cap without calling the bot', async () => {
-    prisma.helpQuestion.count.mockResolvedValue(MAX_QUESTIONS_PER_DAY);
+  it('refuses past the daily cap without calling the bot or saving anything', async () => {
+    for (let n = 0; n < MAX_QUESTIONS_PER_DAY; n++) {
+      brain.answer.mockResolvedValue({ answer: 'ok' });
+      await service.ask('u1', `問題 ${n}`);
+    }
+    brain.answer.mockClear();
+    prisma.helpQuestion.create.mockClear();
     const res: any = await service.ask('u1', '再問一個');
     expect(res.tooMany).toBe(true);
     expect(brain.answer).not.toHaveBeenCalled();
     expect(prisma.helpQuestion.create).not.toHaveBeenCalled();
+  });
+
+  it('a burst of simultaneous questions cannot get past the daily cap (each is counted before the model is called)', async () => {
+    brain.answer.mockResolvedValue({ answer: 'ok' });
+    await Promise.all(
+      Array.from({ length: MAX_QUESTIONS_PER_DAY + 40 }, (_, n) => service.ask('u1', `問題 ${n}`)),
+    );
+    expect(brain.answer).toHaveBeenCalledTimes(MAX_QUESTIONS_PER_DAY);
+  });
+
+  it('stops emailing the admin once the hourly budget is used, but still saves every question', async () => {
+    brain.answer.mockResolvedValue({ answer: null });
+    for (let n = 0; n < MAX_ESCALATION_EMAILS_PER_HOUR + 5; n++) {
+      // A different account each time, as a flood from throwaway accounts would be.
+      await service.ask(`u${n}`, `zzz ${n}`);
+    }
+    expect(prisma.helpQuestion.create).toHaveBeenCalledTimes(MAX_ESCALATION_EMAILS_PER_HOUR + 5);
+    expect(email.sendHelpEscalationNotice).toHaveBeenCalledTimes(MAX_ESCALATION_EMAILS_PER_HOUR);
+  });
+
+  it('shows a long-time asker their NEWEST 100 questions, oldest first', async () => {
+    prisma.helpQuestion.findMany.mockResolvedValue(
+      [3, 2, 1].map((n) => ({
+        id: `q${n}`, question: `Q${n}`, botAnswer: 'a', adminReply: null,
+        status: HelpQuestionStatus.BOT_ANSWERED, createdAt: new Date(), repliedAt: null,
+      })),
+    );
+    const items = await service.listMine('u1');
+    expect(prisma.helpQuestion.findMany.mock.calls[0][0]).toMatchObject({ orderBy: { createdAt: 'desc' }, take: 100 });
+    expect(items.map((i: any) => i.id)).toEqual(['q1', 'q2', 'q3']);
   });
 
   it("shows the admin's reply over the bot's, and marks who answered", async () => {
@@ -182,11 +229,11 @@ describe('HelpBotBrain with Claude', () => {
     }
   });
 
-  it('falls back to keyword matching when the API call throws', async () => {
-    const res = await brainWith(jest.fn().mockRejectedValue(new Error('down'))).answer('怎麼退票');
-    expect(res.answer).toContain('退票');
-    const none = await brainWith(jest.fn().mockRejectedValue(new Error('down'))).answer('今天天氣');
-    expect(none.answer).toBeNull();
+  it('escalates (never answers from keywords) when the configured model call throws', async () => {
+    // 退費 is a keyword hit for the refund FAQ — but a complaint about a double
+    // charge must reach a human when the model that would have judged it is down.
+    const res = await brainWith(jest.fn().mockRejectedValue(new Error('down'))).answer('我被重複扣款，要退費');
+    expect(res.answer).toBeNull();
   });
 });
 
@@ -217,7 +264,8 @@ describe('relationship questions', () => {
       user: { findUnique: jest.fn().mockResolvedValue({ name: '小明', email: 'a@b.c' }) },
     };
     const email = { sendHelpEscalationNotice: jest.fn() };
-    const svc = new HelpBotService(prisma, new HelpBotBrain(), email as any);
+    const redis = { incr: jest.fn().mockResolvedValue(1), expire: jest.fn() } as any;
+    const svc = new HelpBotService(prisma, new HelpBotBrain(), email as any, redis);
     const res: any = await svc.ask('u1', '請問我的感情什麼時候有結果');
     expect(res.item.answer).toBe(LOVE_REPLY);
     expect(res.item.status).toBe('BOT_ANSWERED');

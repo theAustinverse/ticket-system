@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { OrderService } from './order.service';
 import {
   GroupOrderCapReachedError,
@@ -95,6 +95,8 @@ describe('OrderService', () => {
     };
     queueRoomService = {
       consumeAdmission: jest.fn().mockResolvedValue(undefined),
+      beginOrder: jest.fn().mockResolvedValue(true),
+      endOrder: jest.fn().mockResolvedValue(undefined),
     };
     service = new OrderService(
       prisma,
@@ -762,7 +764,7 @@ describe('OrderService', () => {
         .mockResolvedValue({ ...order, status: 'CANCELLED' });
       await service.cancelOrder('user-1', 'order-1');
       expect(prisma.order.updateMany).toHaveBeenCalledWith({
-        where: { id: 'order-1', status: 'PAID' },
+        where: { id: 'order-1', userId: 'user-1', status: 'PAID' },
         data: { status: 'CANCELLED' },
       });
       expect(inventory.releaseStock).toHaveBeenCalledWith('tt-group', 11);
@@ -1023,6 +1025,26 @@ describe('OrderService', () => {
   });
 
   describe('acceptTransfer', () => {
+    // acceptTransfer writes inside an interactive transaction; this fake `tx`
+    // records the writes and reports one row changed unless a test says not.
+    let tx: any;
+    beforeEach(() => {
+      tx = {
+        ticketTransfer: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+        order: {
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          findUniqueOrThrow: jest
+            .fn()
+            .mockResolvedValue({ id: 'order-1', userId: 'user-2', adminNote: 'internal memo' }),
+        },
+        ticket: {
+          findMany: jest.fn().mockResolvedValue([]),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      };
+      prisma.$transaction = jest.fn(async (cb: any) => cb(tx));
+    });
+
     it("emails the admin team with the recipient's reviewed/edited notice details once accepted", async () => {
       prisma.ticketTransfer = {
         findUnique: jest.fn().mockResolvedValue({
@@ -1039,9 +1061,6 @@ describe('OrderService', () => {
         }),
         update: jest.fn(),
       };
-      prisma.$transaction = jest
-        .fn()
-        .mockResolvedValue([null, { id: 'order-1', userId: 'user-2' }]);
 
       await service.acceptTransfer('user-2', 'transfer-1', {
         fromName: '王小明（已編輯）',
@@ -1083,9 +1102,6 @@ describe('OrderService', () => {
         }),
         update: jest.fn(),
       };
-      prisma.$transaction = jest
-        .fn()
-        .mockResolvedValue([null, { id: 'order-1', userId: 'user-2' }]);
       emailService.sendTransferAdminNotice.mockRejectedValue(
         new Error('resend down'),
       );
@@ -1096,6 +1112,7 @@ describe('OrderService', () => {
         mealPreference: '葷食',
         buyingForFamily: false,
       });
+      // ...and the back office's private note never reaches the new owner.
       expect(result).toEqual({ id: 'order-1', userId: 'user-2' });
     });
 
@@ -1133,9 +1150,6 @@ describe('OrderService', () => {
           }),
           update: jest.fn(),
         };
-        prisma.$transaction = jest
-          .fn()
-          .mockResolvedValue([null, { id: 'order-1', userId: 'user-2' }]);
       }
 
       it("stakes the recipient's claim and frees the previous owner's", async () => {
@@ -1186,12 +1200,11 @@ describe('OrderService', () => {
 
       it("gives every seat a fresh QR token in the same transaction as the ownership change", async () => {
         mockPendingTransfer(null);
-        prisma.ticket.findMany.mockResolvedValue([{ id: 'seat-a' }, { id: 'seat-b' }]);
+        tx.ticket.findMany.mockResolvedValue([{ id: 'seat-a' }, { id: 'seat-b' }]);
 
         await service.acceptTransfer('user-2', 'transfer-1', notice);
 
-        const ops = prisma.$transaction.mock.calls[0][0];
-        const seatOps = ops.filter((op: any) => op?.op === 'ticket.update');
+        const seatOps = tx.ticket.update.mock.calls.map((c: any[]) => ({ args: c[0] }));
         expect(seatOps.map((op: any) => op.args.where.id)).toEqual(['seat-a', 'seat-b']);
         const tokens = seatOps.map((op: any) => op.args.data.token);
         expect(tokens.every((t: string) => /^[0-9a-f]{32}$/.test(t))).toBe(true);
@@ -1206,6 +1219,62 @@ describe('OrderService', () => {
           service.acceptTransfer('user-2', 'transfer-1', notice),
         ).rejects.toThrow(BadRequestException);
         expect(prisma.ticket.update).not.toHaveBeenCalled();
+      });
+
+      it('hands the ticket over only if the transfer is still PENDING and the sender still owns a PAID order', async () => {
+        mockPendingTransfer(null);
+        await service.acceptTransfer('user-2', 'transfer-1', notice);
+        expect(tx.ticketTransfer.updateMany).toHaveBeenCalledWith({
+          where: { id: 'transfer-1', status: 'PENDING' },
+          data: expect.objectContaining({ status: 'ACCEPTED' }),
+        });
+        expect(tx.order.updateMany).toHaveBeenCalledWith({
+          where: { id: 'order-1', userId: undefined, status: 'PAID' },
+          data: { userId: 'user-2' },
+        });
+        // Every other open invitation for the same ticket is voided in the same transaction.
+        expect(tx.ticketTransfer.updateMany).toHaveBeenCalledWith({
+          where: { orderId: 'order-1', status: 'PENDING' },
+          data: expect.objectContaining({ status: 'CANCELLED' }),
+        });
+      });
+
+      it('refuses (and hands nothing over) when a rival invitation was accepted first', async () => {
+        mockPendingTransfer(null);
+        tx.ticketTransfer.updateMany.mockResolvedValueOnce({ count: 0 });
+        await expect(
+          service.acceptTransfer('user-2', 'transfer-1', notice),
+        ).rejects.toThrow('no longer pending');
+        expect(tx.order.updateMany).not.toHaveBeenCalled();
+        expect(tx.ticket.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses when the order has already changed hands or been cancelled, and returns the recipient claim', async () => {
+        mockPendingTransfer(11);
+        tx.order.updateMany.mockResolvedValueOnce({ count: 0 });
+        await expect(
+          service.acceptTransfer('user-2', 'transfer-1', notice),
+        ).rejects.toThrow('no longer active');
+        expect(tx.ticket.update).not.toHaveBeenCalled();
+        expect(inventory.releaseGroupPurchaseClaim).toHaveBeenCalledWith('session-1', 'user-2');
+      });
+
+      it('refuses an invitation accepted after the wave\'s transfer deadline', async () => {
+        mockPendingTransfer(null);
+        prisma.ticketTransfer.findUnique.mockResolvedValue({
+          id: 'transfer-1',
+          orderId: 'order-1',
+          toUserId: 'user-2',
+          status: 'PENDING',
+          order: {
+            status: 'PAID',
+            ticketType: { sessionId: 'session-1', fixedQuantity: null, batch: { transferEndAt: new Date(Date.now() - 1000) } },
+          },
+        });
+        await expect(
+          service.acceptTransfer('user-2', 'transfer-1', notice),
+        ).rejects.toThrow('轉讓功能已截止');
+        expect(prisma.$transaction).not.toHaveBeenCalled();
       });
 
       it('leaves claims alone entirely for a non-group order', async () => {
@@ -1485,6 +1554,206 @@ describe('OrderService', () => {
         11,
       );
       expect(inventory.releaseStock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('hardening (audit follow-ups)', () => {
+    describe('what a buyer can read', () => {
+      it("never returns the back office's adminNote from findOrder or listMyOrders", async () => {
+        prisma.order.findUnique = jest
+          .fn()
+          .mockResolvedValue({ id: 'order-1', userId: 'user-1', adminNote: 'secret memo' });
+        expect(await service.findOrder('user-1', 'order-1')).not.toHaveProperty('adminNote');
+
+        prisma.order.findMany = jest.fn().mockResolvedValue([
+          {
+            id: 'order-1',
+            adminNote: 'secret memo',
+            ticketType: { sessionId: 's', batchId: 'b' },
+            transfers: [],
+            tickets: [],
+          },
+        ]);
+        prisma.saleBatch = { findMany: jest.fn().mockResolvedValue([{ id: 'b' }]) };
+        const [mine] = await service.listMyOrders('user-1');
+        expect(mine).not.toHaveProperty('adminNote');
+      });
+
+      it("shows an incoming transfer's recipient only what the invitation needs (no phone, LINE, member contacts or memo)", async () => {
+        prisma.ticketTransfer = { findMany: jest.fn().mockResolvedValue([]) };
+        await service.listIncomingTransfers('user-2');
+        const { include } = prisma.ticketTransfer.findMany.mock.calls[0][0];
+        expect(include.order.include).toBeUndefined();
+        const selected = Object.keys(include.order.select);
+        for (const hidden of [
+          'adminNote',
+          'registrantPhone',
+          'registrantLineId',
+          'groupLeaderPhone',
+          'groupLeaderLineId',
+          'groupMembers',
+          'companions',
+        ]) {
+          expect(selected).not.toContain(hidden);
+        }
+        expect(selected).toEqual(expect.arrayContaining(['mealPreference', 'ticketType']));
+      });
+    });
+
+    describe('editing a registration cannot dodge the one-own-seat rule', () => {
+      const familyOrder = {
+        id: 'order-1',
+        userId: 'user-1',
+        quantity: 2,
+        buyingForFamily: true,
+        ticketType: {
+          id: 'tt-individual',
+          fixedQuantity: null,
+          maxQuantityPerOrder: 5,
+          session: { startTime: new Date('2099-01-01T00:00:00Z') },
+        },
+      };
+      const dto = (names: string[]) => ({
+        registrantName: '王小明',
+        registrantTeam: 'Team',
+        registrantLineId: 'line',
+        registrantPhone: '0900000000',
+        mealPreference: '葷食',
+        companions: names.map((name) => ({ name, relationship: '父母', mealPreference: '葷食', note: 'x' })),
+      });
+      beforeEach(() => {
+        prisma.order.findUnique = jest.fn().mockResolvedValue(familyOrder);
+        prisma.order.update = jest.fn().mockResolvedValue({});
+      });
+
+      it("rejects renaming a relative to the buyer's own name", async () => {
+        await expect(
+          service.updateRegistrantInfo('user-1', 'order-1', dto(['王小明', '林小美'])),
+        ).rejects.toThrow('不能和您本人相同');
+        expect(prisma.order.update).not.toHaveBeenCalled();
+      });
+
+      it('rejects the same relative listed twice', async () => {
+        await expect(
+          service.updateRegistrantInfo('user-1', 'order-1', dto(['林小美', '林小美'])),
+        ).rejects.toThrow('重複');
+        expect(prisma.order.update).not.toHaveBeenCalled();
+      });
+
+      it('still accepts a proper edit', async () => {
+        await service.updateRegistrantInfo('user-1', 'order-1', dto(['陳小華', '林小美']));
+        expect(prisma.order.update).toHaveBeenCalled();
+      });
+    });
+
+    describe('one admission, one order at a time', () => {
+      it('turns away a second request that uses the same queue token while the first is still in flight', async () => {
+        queueRoomService.beginOrder.mockResolvedValue(false);
+        await expect(
+          service.createOrder('user-1', validGroupOrderDto, 'queue-token-1'),
+        ).rejects.toThrow(ConflictException);
+        expect(inventory.decrementStock).not.toHaveBeenCalled();
+        expect(prisma.order.create).not.toHaveBeenCalled();
+      });
+
+      it('lets go of the token afterwards, even when the order fails, so a corrected retry works', async () => {
+        inventory.decrementStock.mockRejectedValue(new InsufficientStockError('tt-group'));
+        await expect(
+          service.createOrder('user-1', validGroupOrderDto, 'queue-token-1'),
+        ).rejects.toThrow();
+        expect(queueRoomService.endOrder).toHaveBeenCalledWith('tt-group', 'queue-token-1');
+      });
+
+      it('spends the admission even if the confirmation email blows up, and still returns the order', async () => {
+        inventory.decrementStock.mockResolvedValue(0);
+        prisma.order.create.mockResolvedValue({ id: 'order-1' });
+        emailService.sendOrderConfirmation.mockRejectedValue(new Error('resend down'));
+        const order = await service.createOrder('user-1', validGroupOrderDto, 'queue-token-1');
+        expect(order).toEqual({ id: 'order-1' });
+        expect(queueRoomService.consumeAdmission).toHaveBeenCalledWith('tt-group', 'queue-token-1');
+        // A failure after the order exists must not release the leader's bundle claim.
+        expect(inventory.releaseGroupPurchaseClaim).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('transfers', () => {
+      it('maps the unique-index violation from a simultaneous second invitation to a clear refusal', async () => {
+        prisma.order.findUnique = jest.fn().mockResolvedValue({
+          id: 'order-1',
+          userId: 'user-1',
+          status: 'PAID',
+          ticketType: { sessionId: 's', batchId: 'batch-2', name: 'T', batch: {} },
+        });
+        prisma.saleBatch = { findMany: jest.fn().mockResolvedValue([{ id: 'batch-1' }, { id: 'batch-2' }]) };
+        prisma.ticketTransfer = {
+          findFirst: jest.fn().mockResolvedValue(null),
+          create: jest.fn().mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' })),
+        };
+        prisma.user.findUnique = jest.fn().mockImplementation(({ where }) =>
+          Promise.resolve(where.id ? { id: 'user-1', email: 'a@gmail.com' } : { id: 'user-2', email: 'b@gmail.com' }),
+        );
+        await expect(
+          service.createTransfer('user-1', 'order-1', 'b@gmail.com'),
+        ).rejects.toThrow('already has a pending transfer');
+      });
+
+      it('lets the sender cancel only while it is still PENDING (not after the recipient accepted)', async () => {
+        prisma.ticketTransfer = {
+          findUnique: jest.fn().mockResolvedValue({ id: 't1', orderId: 'o1', fromUserId: 'user-1', toUserId: 'user-2', status: 'PENDING' }),
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+          findUniqueOrThrow: jest.fn(),
+        };
+        await expect(service.cancelTransfer('user-1', 't1')).rejects.toThrow('no longer pending');
+        expect(prisma.ticketTransfer.updateMany).toHaveBeenCalledWith({
+          where: { id: 't1', status: 'PENDING' },
+          data: expect.objectContaining({ status: 'CANCELLED' }),
+        });
+        expect(prisma.orderHistory.create).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('cancelling a group order', () => {
+      it('stays cancelled (and is NOT put back on sale) when only the bundle-claim release fails, since the seats are already back in the pool', async () => {
+        const order = {
+          id: 'order-1',
+          userId: 'user-1',
+          quantity: 11,
+          status: 'PAID',
+          ticketTypeId: 'tt-group',
+          ticketType: {
+            ...groupTicketType,
+            session: { startTime: new Date('2099-01-01T00:00:00Z') },
+            batch: { saleEndAt: null },
+          },
+        };
+        prisma.order.findUnique = jest.fn().mockResolvedValue(order);
+        prisma.order.update = jest.fn();
+        prisma.order.findUniqueOrThrow = jest.fn().mockResolvedValue({ ...order, status: 'CANCELLED' });
+        inventory.releaseGroupPurchaseClaim.mockRejectedValue(new Error('redis blip'));
+        const result = await service.cancelOrder('user-1', 'order-1');
+        expect(result.status).toBe('CANCELLED');
+        expect(prisma.order.update).not.toHaveBeenCalled();
+      });
+
+      it('is still put back to PAID when the stock itself could not be released', async () => {
+        const order = {
+          id: 'order-1',
+          userId: 'user-1',
+          quantity: 11,
+          status: 'PAID',
+          ticketTypeId: 'tt-group',
+          ticketType: {
+            ...groupTicketType,
+            session: { startTime: new Date('2099-01-01T00:00:00Z') },
+            batch: { saleEndAt: null },
+          },
+        };
+        prisma.order.findUnique = jest.fn().mockResolvedValue(order);
+        prisma.order.update = jest.fn().mockResolvedValue({});
+        inventory.releaseStock.mockRejectedValue(new Error('redis down'));
+        await expect(service.cancelOrder('user-1', 'order-1')).rejects.toThrow('redis down');
+        expect(prisma.order.update).toHaveBeenCalledWith({ where: { id: 'order-1' }, data: { status: 'PAID' } });
+      });
     });
   });
 });

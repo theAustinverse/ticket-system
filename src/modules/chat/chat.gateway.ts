@@ -94,7 +94,9 @@ export class ChatGateway implements OnGatewayConnection {
       return;
     }
 
-    const authorName = user.name || user.email;
+    // Everyone signed in sees this wall: an account with no profile name
+    // must not have its email address shown to them all.
+    const authorName = user.name?.trim() || '匿名';
     const message = await this.chatService.createMessage(userId, authorName, content);
     this.server.emit('chat:new', message);
   }

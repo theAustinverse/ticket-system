@@ -12,6 +12,13 @@ async function bootstrap() {
   // RateLimitGuard) — a single global switch with no other safeguard, so a
   // config-management slip that leaves it set in production would silently
   // remove all request throttling. Loud at boot so that's hard to miss.
+  if (process.env.LOAD_TEST_MODE === 'true' && process.env.NODE_ENV === 'production') {
+    // Not just a warning: with it on, throttling is off and synthetic
+    // accounts get their verification code in the response body.
+    throw new Error(
+      'Refusing to start: LOAD_TEST_MODE=true is set while NODE_ENV=production. Unset it.',
+    );
+  }
   if (process.env.LOAD_TEST_MODE === 'true') {
     new Logger('Bootstrap').warn(
       'LOAD_TEST_MODE=true — the anti-bot rate limiter is DISABLED for all routes. This must never be set in production.',

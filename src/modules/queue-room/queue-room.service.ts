@@ -153,6 +153,29 @@ export class QueueRoomService {
   }
 
   /**
+   * Marks an admitted token as "an order is being placed with it right now".
+   * The admission is only spent after the order succeeds (so a rejected
+   * attempt can be retried), which leaves a window in which the same token
+   * could start several orders at once — each would pass AdmissionGuard.
+   * Returns false if one is already in flight. Self-expires, so a crashed
+   * request can't wedge the token.
+   */
+  async beginOrder(ticketTypeId: string, token: string): Promise<boolean> {
+    const result = await this.redis.set(
+      `orderlock:${ticketTypeId}:${token}`,
+      '1',
+      'EX',
+      30,
+      'NX',
+    );
+    return result === 'OK';
+  }
+
+  async endOrder(ticketTypeId: string, token: string): Promise<void> {
+    await this.redis.del(`orderlock:${ticketTypeId}:${token}`);
+  }
+
+  /**
    * Consumes an admitted token after it's been spent on one successful
    * order — otherwise it stays valid for the rest of its TTL (up to 5
    * minutes) and the same admission can be replayed against the order API

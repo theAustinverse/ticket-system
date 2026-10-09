@@ -430,4 +430,54 @@ describe('AuthService', () => {
       );
     });
   });
+
+  describe('parallel guessing (attempts are claimed before they are checked)', () => {
+    it('lets at most MAX_VERIFICATION_ATTEMPTS guesses through a burst of simultaneous requests', async () => {
+      await redis.set(
+        'pending-registration:victim@gmail.com',
+        JSON.stringify({ passwordHash: 'hashed', code: '123456' }),
+      );
+      const results = await Promise.allSettled(
+        Array.from({ length: 200 }, (_, i) =>
+          service.verifyRegistration({
+            email: 'victim@gmail.com',
+            // Only the last guess is right — it must not get a turn.
+            code: i === 199 ? '123456' : '000000',
+          }),
+        ),
+      );
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(0);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('does not let the right password through at the end of a burst of simultaneous logins', async () => {
+      const passwordHash = await bcrypt.hash('correct-password', 4);
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', email: 'a@gmail.com', role: 'USER', passwordHash });
+      const results = await Promise.allSettled(
+        Array.from({ length: 100 }, (_, i) =>
+          service.login({
+            email: 'a@gmail.com',
+            password: i === 99 ? 'correct-password' : 'wrong-password',
+          }),
+        ),
+      );
+      // Under the old read-then-increment order every one of these saw "0
+      // failures", so the correct guess at the end would have been honoured.
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(0);
+    });
+
+    it('does not let the right admin password through at the end of a burst either', async () => {
+      process.env.ADMIN_USERNAME = 'boss';
+      process.env.ADMIN_PASSWORD_HASH = await bcrypt.hash('admin-password', 4);
+      const results = await Promise.allSettled(
+        Array.from({ length: 100 }, (_, i) =>
+          service.adminLogin({
+            username: 'boss',
+            password: i === 99 ? 'admin-password' : 'wrong-password',
+          }),
+        ),
+      );
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(0);
+    });
+  });
 });

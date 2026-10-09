@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { randomInt } from 'crypto';
+import { randomInt, timingSafeEqual } from 'crypto';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -101,6 +101,16 @@ export class AuthService {
     return `password-reset-cooldown:${email.toLowerCase()}`;
   }
 
+  /**
+   * Constant-time comparison for the 6-digit codes — a plain `!==` leaks how
+   * many leading characters matched through response timing.
+   */
+  private codesMatch(expected: string, given: string): boolean {
+    const a = Buffer.from(String(expected));
+    const b = Buffer.from(String(given));
+    return a.length === b.length && timingSafeEqual(a, b);
+  }
+
   /** Increments a Redis failure counter, expiring it after `windowSeconds` from the first failure. */
   private async recordFailure(key: string, windowSeconds: number): Promise<number> {
     const attempts = await this.redis.incr(key);
@@ -117,8 +127,11 @@ export class AuthService {
    * which is what proves the email address is really reachable by its owner.
    */
   async register(dto: RegisterDto) {
-    const existing = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+    // Case-insensitive: the pending/attempt keys in Redis are lowercased, so
+    // "Victim@gmail.com" and "victim@gmail.com" would otherwise be two
+    // accounts that share one verification and lockout state.
+    const existing = await this.prisma.user.findFirst({
+      where: { email: { equals: dto.email, mode: 'insensitive' } },
     });
     if (existing) {
       throw new ConflictException('Email already registered');
@@ -162,17 +175,25 @@ export class AuthService {
     }
 
     const pending: PendingRegistration = JSON.parse(raw);
-    if (pending.code !== dto.code) {
-      // Cap total guesses against this code — not per-IP, so spreading
-      // attempts across many IPs doesn't help. Exhausting the cap kills the
-      // pending registration outright, closing the account-takeover window
-      // (attacker registers a victim's email, then brute-forces the code
-      // the victim received, to bind that email to an attacker-chosen
-      // password) rather than just slowing it down.
-      const attempts = await this.recordFailure(
-        this.verificationAttemptsKey(dto.email),
-        VERIFICATION_TTL_SECONDS,
+    // Cap total guesses against this code — not per-IP, so spreading
+    // attempts across many IPs doesn't help. The guess is counted *before*
+    // it is compared (atomic INCR), so a burst of parallel requests can't
+    // all slip through while the counter is still at zero. Exhausting the
+    // cap kills the pending registration outright, closing the
+    // account-takeover window (attacker registers a victim's email, then
+    // brute-forces the code the victim received, to bind that email to an
+    // attacker-chosen password) rather than just slowing it down.
+    const attempts = await this.recordFailure(
+      this.verificationAttemptsKey(dto.email),
+      VERIFICATION_TTL_SECONDS,
+    );
+    if (attempts > MAX_VERIFICATION_ATTEMPTS) {
+      await this.redis.del(key);
+      throw new BadRequestException(
+        'Too many incorrect attempts — please register again',
       );
+    }
+    if (!this.codesMatch(pending.code, dto.code)) {
       if (attempts >= MAX_VERIFICATION_ATTEMPTS) {
         await this.redis.del(key);
         throw new BadRequestException(
@@ -200,8 +221,11 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     const attemptsKey = this.loginAttemptsKey(dto.email);
-    const existingAttempts = Number((await this.redis.get(attemptsKey)) ?? 0);
-    if (existingAttempts >= MAX_LOGIN_ATTEMPTS) {
+    // Claim the attempt *before* the slow bcrypt compare, atomically (INCR).
+    // Reading the counter first and only bumping it after a failure let a
+    // burst of parallel requests all see "0 failures" and all get a guess.
+    const attemptsSoFar = await this.recordFailure(attemptsKey, LOGIN_LOCKOUT_SECONDS);
+    if (attemptsSoFar > MAX_LOGIN_ATTEMPTS) {
       throw new UnauthorizedException(
         'Too many failed login attempts — please try again in a few minutes',
       );
@@ -219,7 +243,6 @@ export class AuthService {
       user?.passwordHash ?? DUMMY_PASSWORD_HASH,
     );
     if (!user || !passwordMatches) {
-      await this.recordFailure(attemptsKey, LOGIN_LOCKOUT_SECONDS);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -294,11 +317,18 @@ export class AuthService {
     }
 
     const pending: PendingPasswordReset = JSON.parse(raw);
-    if (pending.code !== dto.code) {
-      const attempts = await this.recordFailure(
-        this.passwordResetAttemptsKey(dto.email),
-        PASSWORD_RESET_TTL_SECONDS,
+    // Counted before it is compared, atomically — see verifyRegistration.
+    const attempts = await this.recordFailure(
+      this.passwordResetAttemptsKey(dto.email),
+      PASSWORD_RESET_TTL_SECONDS,
+    );
+    if (attempts > MAX_RESET_ATTEMPTS) {
+      await this.redis.del(key);
+      throw new BadRequestException(
+        'Too many incorrect attempts — please request a new code',
       );
+    }
+    if (!this.codesMatch(pending.code, dto.code)) {
       if (attempts >= MAX_RESET_ATTEMPTS) {
         await this.redis.del(key);
         throw new BadRequestException(
@@ -350,8 +380,11 @@ export class AuthService {
     // trying different ones, and a real admin locked out by an attack can
     // simply wait out the cooldown.
     const attemptsKey = 'admin-login-attempts';
-    const existingAttempts = Number((await this.redis.get(attemptsKey)) ?? 0);
-    if (existingAttempts >= MAX_LOGIN_ATTEMPTS) {
+    // Claim the attempt *before* the slow bcrypt compare, atomically (INCR).
+    // Reading the counter first and only bumping it after a failure let a
+    // burst of parallel requests all see "0 failures" and all get a guess.
+    const attemptsSoFar = await this.recordFailure(attemptsKey, LOGIN_LOCKOUT_SECONDS);
+    if (attemptsSoFar > MAX_LOGIN_ATTEMPTS) {
       throw new UnauthorizedException(
         'Too many failed login attempts — please try again in a few minutes',
       );
@@ -364,7 +397,6 @@ export class AuthService {
       adminPasswordHash,
     );
     if (dto.username !== adminUsername || !passwordMatches) {
-      await this.recordFailure(attemptsKey, LOGIN_LOCKOUT_SECONDS);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -397,8 +429,11 @@ export class AuthService {
     }
 
     const attemptsKey = `checkin-login-attempts:${clientIp}`;
-    const existingAttempts = Number((await this.redis.get(attemptsKey)) ?? 0);
-    if (existingAttempts >= MAX_LOGIN_ATTEMPTS) {
+    // Claim the attempt *before* the slow bcrypt compare, atomically (INCR).
+    // Reading the counter first and only bumping it after a failure let a
+    // burst of parallel requests all see "0 failures" and all get a guess.
+    const attemptsSoFar = await this.recordFailure(attemptsKey, LOGIN_LOCKOUT_SECONDS);
+    if (attemptsSoFar > MAX_LOGIN_ATTEMPTS) {
       throw new UnauthorizedException(
         'Too many failed login attempts — please try again in a few minutes',
       );
@@ -407,7 +442,6 @@ export class AuthService {
     // Always compare, even on a username mismatch (same timing reason as adminLogin).
     const passwordMatches = await bcrypt.compare(dto.password, passwordHash);
     if (dto.username !== username || !passwordMatches) {
-      await this.recordFailure(attemptsKey, LOGIN_LOCKOUT_SECONDS);
       throw new UnauthorizedException('Invalid credentials');
     }
 

@@ -71,8 +71,12 @@ export class EmailService {
 
   async sendVerificationCode(email: string, code: string): Promise<void> {
     if (!this.resend) {
+      // Printing the code is a dev convenience only: in production a missing
+      // key must not turn the log into a source of working codes.
       this.logger.warn(
-        `RESEND_API_KEY not set — skipping send, verification code for ${email} is ${code}`,
+        process.env.NODE_ENV === 'production'
+          ? `RESEND_API_KEY not set — verification code for ${email} was NOT sent`
+          : `RESEND_API_KEY not set — skipping send, verification code for ${email} is ${code}`,
       );
       return;
     }
@@ -102,7 +106,9 @@ export class EmailService {
   async sendPasswordResetCode(email: string, code: string): Promise<void> {
     if (!this.resend) {
       this.logger.warn(
-        `RESEND_API_KEY not set — skipping send, password reset code for ${email} is ${code}`,
+        process.env.NODE_ENV === 'production'
+          ? `RESEND_API_KEY not set — password reset code for ${email} was NOT sent`
+          : `RESEND_API_KEY not set — skipping send, password reset code for ${email} is ${code}`,
       );
       return;
     }

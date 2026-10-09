@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../../redis/redis.module';
 import { HelpQuestionStatus } from '../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
@@ -7,22 +9,52 @@ import { HelpBotBrain } from './help-bot.brain';
 /** Per-account cap on questions per day — the LLM call costs real money. */
 export const MAX_QUESTIONS_PER_DAY = 30;
 
+/**
+ * Escalation emails per hour, across ALL users. Each one is a real email from
+ * the same Resend account that sends registration and password-reset codes, so
+ * a flood of "unsure" questions (from many throwaway accounts) must not be able
+ * to use up that quota. Over the cap the question is still saved and listed on
+ * /admin/help — only the notification is skipped.
+ */
+export const MAX_ESCALATION_EMAILS_PER_HOUR = 20;
+
 @Injectable()
 export class HelpBotService {
+  private readonly logger = new Logger(HelpBotService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly brain: HelpBotBrain,
     private readonly email: EmailService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
+
+  /**
+   * Counts this question against the account's daily allowance *before* the
+   * model is called (atomic INCR). Counting rows afterwards let a burst of
+   * simultaneous requests all see "0 asked" and each cost a model call.
+   */
+  private async withinDailyAllowance(userId: string): Promise<boolean> {
+    const day = new Date().toISOString().slice(0, 10);
+    const key = `help-asked:${userId}:${day}`;
+    const n = await this.redis.incr(key);
+    if (n === 1) await this.redis.expire(key, 26 * 60 * 60);
+    return n <= MAX_QUESTIONS_PER_DAY;
+  }
+
+  /** True while the hourly escalation-email budget (shared by everyone) has room. */
+  private async escalationEmailAllowed(): Promise<boolean> {
+    const hour = new Date().toISOString().slice(0, 13);
+    const key = `help-escalation-mails:${hour}`;
+    const n = await this.redis.incr(key);
+    if (n === 1) await this.redis.expire(key, 2 * 60 * 60);
+    return n <= MAX_ESCALATION_EMAILS_PER_HOUR;
+  }
 
   async ask(userId: string, question: string) {
     const text = question.trim();
 
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const asked = await this.prisma.helpQuestion.count({
-      where: { userId, createdAt: { gte: since } },
-    });
-    if (asked >= MAX_QUESTIONS_PER_DAY) {
+    if (!(await this.withinDailyAllowance(userId))) {
       return { tooMany: true as const };
     }
 
@@ -43,7 +75,11 @@ export class HelpBotService {
       },
     });
 
-    if (!answer) {
+    if (!answer && !(await this.escalationEmailAllowed().catch(() => true))) {
+      this.logger.warn(
+        'Escalation email budget for this hour is used up — the question is saved on /admin/help but no email was sent',
+      );
+    } else if (!answer) {
       // Best-effort: the question is saved and visible in the admin list
       // either way, so a mail failure must not fail the asker's request.
       await this.email
@@ -59,12 +95,14 @@ export class HelpBotService {
   }
 
   async listMine(userId: string) {
+    // Newest 100, shown oldest-first. (Taking the oldest 100 would hide every
+    // new question and reply once an account had asked more than 100.)
     const rows = await this.prisma.helpQuestion.findMany({
       where: { userId },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
       take: 100,
     });
-    return rows.map((r) => this.toUserView(r));
+    return rows.reverse().map((r) => this.toUserView(r));
   }
 
   // ---- admin ----
