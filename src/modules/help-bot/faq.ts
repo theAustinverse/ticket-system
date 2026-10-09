@@ -104,3 +104,17 @@ export const FAQ: FaqEntry[] = [
     keywords: ['贊助', '對帳碼', '離開', '忘了', '找不到對帳碼', '還沒轉'],
   },
 ];
+
+/** The fixed reply to relationship / love-life questions — not a system question, so never escalated. */
+export const LOVE_REPLY = '去問月老，別煩我好嘛！？';
+
+/**
+ * Words that mark a question as being about romance. Deliberately only the
+ * unambiguous ones: "男友"/"女友"/"另一半" also show up in perfectly normal
+ * ticket questions ("我想幫男友買票"), and those must still reach the bot.
+ */
+const LOVE_KEYWORDS = ['感情', '愛情', '戀愛', '告白', '暗戀', '脫單', '分手', '桃花', '曖昧', '追求', '月老', '姻緣'];
+
+export function isLoveQuestion(question: string): boolean {
+  return LOVE_KEYWORDS.some((k) => question.includes(k));
+}

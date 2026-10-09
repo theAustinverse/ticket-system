@@ -1,5 +1,6 @@
 import { HelpQuestionStatus } from '../../generated/prisma/client';
 import { HelpBotBrain, parseVerdict } from './help-bot.brain';
+import { LOVE_REPLY, isLoveQuestion } from './faq';
 import {
   HelpBotService,
   MAX_QUESTIONS_PER_DAY,
@@ -186,5 +187,40 @@ describe('HelpBotBrain with Claude', () => {
     expect(res.answer).toContain('退票');
     const none = await brainWith(jest.fn().mockRejectedValue(new Error('down'))).answer('今天天氣');
     expect(none.answer).toBeNull();
+  });
+});
+
+describe('relationship questions', () => {
+  it('get the fixed reply without calling any model', async () => {
+    const create = jest.fn();
+    const brain = new HelpBotBrain() as any;
+    brain.claude = { messages: { create } };
+    const res = await (brain as HelpBotBrain).answer('我暗戀一個人，要怎麼告白？');
+    expect(res.answer).toBe('去問月老，別煩我好嘛！？');
+    expect(res.answer).toBe(LOVE_REPLY);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('are recognised, but ordinary ticket questions mentioning a partner are not', () => {
+    expect(isLoveQuestion('感情問題可以問嗎')).toBe(true);
+    expect(isLoveQuestion('我想幫男友買票')).toBe(false);
+    expect(isLoveQuestion('另一半可以轉讓票券嗎')).toBe(false);
+    expect(isLoveQuestion('怎麼退票')).toBe(false);
+  });
+
+  it('is stored as answered by the bot, so the admin is NOT emailed', async () => {
+    const prisma: any = {
+      helpQuestion: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn().mockImplementation(async ({ data }) => ({ id: 'q', adminReply: null, repliedAt: null, createdAt: new Date(), ...data })),
+      },
+      user: { findUnique: jest.fn().mockResolvedValue({ name: '小明', email: 'a@b.c' }) },
+    };
+    const email = { sendHelpEscalationNotice: jest.fn() };
+    const svc = new HelpBotService(prisma, new HelpBotBrain(), email as any);
+    const res: any = await svc.ask('u1', '請問我的感情什麼時候有結果');
+    expect(res.item.answer).toBe(LOVE_REPLY);
+    expect(res.item.status).toBe('BOT_ANSWERED');
+    expect(email.sendHelpEscalationNotice).not.toHaveBeenCalled();
   });
 });
