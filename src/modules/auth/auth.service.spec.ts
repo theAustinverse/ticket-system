@@ -1,4 +1,4 @@
-import { BadRequestException, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Logger, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 
@@ -30,7 +30,7 @@ describe('AuthService', () => {
       }),
       expire: jest.fn(async () => 1),
     };
-    prisma = { user: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() } };
+    prisma = { user: { findUnique: jest.fn(), findFirst: jest.fn().mockResolvedValue(null), create: jest.fn(), update: jest.fn() } };
     jwtService = { sign: jest.fn().mockReturnValue('signed-jwt') };
     emailService = {
       sendVerificationCode: jest.fn(),
@@ -95,6 +95,49 @@ describe('AuthService', () => {
       expect(prisma.user.create).toHaveBeenCalled();
       expect(result).toEqual({ accessToken: 'signed-jwt' });
     });
+
+    it('stores the canonical mailbox key with the new account', async () => {
+      await seedPending('J.Smith+x@gmail.com', '654321');
+      prisma.user.create.mockResolvedValue({ id: 'user-1', email: 'J.Smith+x@gmail.com', role: 'USER' });
+      await service.verifyRegistration({ email: 'J.Smith+x@gmail.com', code: '654321' });
+      expect(prisma.user.create.mock.calls[0][0].data).toMatchObject({
+        email: 'J.Smith+x@gmail.com',
+        emailKey: 'jsmith@gmail.com',
+      });
+    });
+
+    it('turns away a second alias of a mailbox that already has an account', async () => {
+      await seedPending('vic.tim@gmail.com', '654321');
+      prisma.user.findFirst.mockResolvedValue({ id: 'u0', email: 'victim@gmail.com' });
+      await expect(
+        service.verifyRegistration({ email: 'vic.tim@gmail.com', code: '654321' }),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.user.findFirst.mock.calls[0][0].where.OR).toContainEqual({ emailKey: 'victim@gmail.com' });
+    });
+
+    it('lets only one of two simultaneous aliases in (the unique key refuses the second)', async () => {
+      await seedPending('victim+2@gmail.com', '654321');
+      prisma.user.create.mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' }));
+      await expect(
+        service.verifyRegistration({ email: 'victim+2@gmail.com', code: '654321' }),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('register', () => {
+    it.each(['vic.tim@gmail.com', 'victim+tickets@gmail.com', 'VICTIM@gmail.com', 'victim@googlemail.com'])(
+      'refuses %s when victim@gmail.com already has an account, before sending any code',
+      async (alias) => {
+        prisma.user.findFirst.mockResolvedValue({ id: 'u0', email: 'victim@gmail.com' });
+        await expect(
+          service.register({ email: alias, password: 'a-long-password' } as any),
+        ).rejects.toThrow(ConflictException);
+        expect(emailService.sendVerificationCode).not.toHaveBeenCalled();
+        const where = prisma.user.findFirst.mock.calls[0][0].where;
+        expect(where.OR).toContainEqual({ emailKey: 'victim@gmail.com' });
+      },
+    );
   });
 
   describe('login', () => {

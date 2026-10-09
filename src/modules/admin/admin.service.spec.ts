@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 
 describe('AdminService', () => {
@@ -410,6 +410,77 @@ describe('AdminService', () => {
       await expect(service.cancelOrder('o1', 'a')).rejects.toThrow('redis down');
       expect(prisma.order.update).toHaveBeenCalledWith({ where: { id: 'o1' }, data: { status: 'PAID' } });
       expect(prisma.orderHistory.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resetStock', () => {
+    const HOUR = 60 * 60 * 1000;
+    const batch = (name: string, startOffsetH: number | null, endOffsetH: number | null) => ({
+      name,
+      saleStartAt: startOffsetH === null ? null : new Date(Date.now() + startOffsetH * HOUR),
+      saleEndAt: endOffsetH === null ? null : new Date(Date.now() + endOffsetH * HOUR),
+    });
+    const ticketType = (id: string, b: ReturnType<typeof batch>) => ({
+      id,
+      name: id,
+      totalQuantity: 100,
+      sharedStockKey: null,
+      poolTotalQuantity: null,
+      maxGroupOrders: null,
+      batch: b,
+    });
+
+    beforeEach(() => {
+      prisma.ticketType = { findMany: jest.fn() };
+      prisma.order.aggregate = jest.fn().mockResolvedValue({ _sum: { quantity: 30 } });
+      prisma.order.count = jest.fn().mockResolvedValue(0);
+      inventory.initStock = jest.fn().mockResolvedValue(undefined);
+      inventory.setGroupOrderCount = jest.fn().mockResolvedValue(undefined);
+    });
+
+    it('refuses while a wave is on sale (an order may be between Redis and Postgres), and touches nothing', async () => {
+      prisma.ticketType.findMany.mockResolvedValue([
+        ticketType('early', batch('第一波', -48, -24)),
+        ticketType('regular', batch('第二波', -1, 24)),
+      ]);
+      await expect(service.resetStock()).rejects.toThrow(ConflictException);
+      await expect(service.resetStock()).rejects.toThrow('第二波');
+      expect(inventory.initStock).not.toHaveBeenCalled();
+    });
+
+    it('treats a started wave with no end date as still on sale', async () => {
+      prisma.ticketType.findMany.mockResolvedValue([ticketType('last', batch('最後席次', -5, null))]);
+      await expect(service.resetStock()).rejects.toThrow(ConflictException);
+    });
+
+    it('runs when the admin explicitly forces it', async () => {
+      prisma.ticketType.findMany.mockResolvedValue([ticketType('regular', batch('第二波', -1, 24))]);
+      const result = await service.resetStock({ force: true });
+      expect(inventory.initStock).toHaveBeenCalledWith('regular', 70);
+      expect(result).toEqual([{ id: 'regular', name: 'regular', resetTo: 70 }]);
+    });
+
+    it('runs freely when no wave is selling: not opened yet, already closed, or no date set', async () => {
+      prisma.ticketType.findMany.mockResolvedValue([
+        ticketType('future', batch('未開賣', 24, 48)),
+        ticketType('closed', batch('已結束', -48, -1)),
+        ticketType('tbd', batch('未公布', null, null)),
+      ]);
+      const result = await service.resetStock();
+      expect(result).toHaveLength(3);
+      expect(inventory.initStock).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('listUsers', () => {
+    it('flags accounts that share a Gmail inbox with an older one (no emailKey) and never leaks the key itself', async () => {
+      prisma.user.findMany = jest.fn().mockResolvedValue([
+        { id: 'u1', email: 'a.b@gmail.com', emailKey: 'ab@gmail.com', orders: [] },
+        { id: 'u2', email: 'ab+1@gmail.com', emailKey: null, orders: [] },
+      ]);
+      const users = await service.listUsers();
+      expect(users.map((u: any) => [u.id, u.sharedMailbox])).toEqual([['u1', false], ['u2', true]]);
+      expect(users[0]).not.toHaveProperty('emailKey');
     });
   });
 });

@@ -22,6 +22,7 @@ import { BulkDeleteUsersDto } from './dto/bulk-delete-users.dto';
 import { UpdateSeatDto } from './dto/update-seat.dto';
 import { UpdateOrderTeamDto } from './dto/update-order-team.dto';
 import { BulkDeleteOrdersDto } from './dto/bulk-delete-orders.dto';
+import { ResetStockDto } from './dto/reset-stock.dto';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -108,8 +109,8 @@ export class AdminController {
 
   @Post('reset-stock')
   @RateLimit(5, 60)
-  resetStock() {
-    return this.adminService.resetStock();
+  resetStock(@Body() dto: ResetStockDto) {
+    return this.adminService.resetStock({ force: dto?.force === true });
   }
 
   @Delete('load-test-users')

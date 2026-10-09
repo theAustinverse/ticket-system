@@ -557,12 +557,38 @@ export const api = {
       body: JSON.stringify({ ids }),
     }),
 
-  /** Re-seeds every ticket type's stock counter back to its full totalQuantity. */
-  adminResetStock: (authToken: string) =>
-    request<{ id: string; name: string; resetTo: number }[]>(
-      '/admin/reset-stock',
-      { method: 'POST', headers: authHeader(authToken) },
-    ),
+  /**
+   * Re-derives every ticket type's stock counter from the real PAID orders.
+   * While a wave is on sale the server refuses (409) with an explanation,
+   * because a reset then can hand back seats that in-flight orders have just
+   * taken; the admin is shown that explanation and the reset is repeated with
+   * `force` only if they confirm.
+   */
+  adminResetStock: async (
+    authToken: string,
+    force = false,
+  ): Promise<{ id: string; name: string; resetTo: number }[]> => {
+    try {
+      return await request<{ id: string; name: string; resetTo: number }[]>(
+        '/admin/reset-stock',
+        {
+          method: 'POST',
+          headers: authHeader(authToken),
+          body: JSON.stringify({ force }),
+        },
+      );
+    } catch (err) {
+      if (
+        !force &&
+        err instanceof ApiError &&
+        err.status === 409 &&
+        window.confirm(`${err.message}\n\n仍要現在重設庫存嗎？`)
+      ) {
+        return api.adminResetStock(authToken, true);
+      }
+      throw err;
+    }
+  },
 
   /** Deletes every synthetic loadtest<n>@gmail.com account (and their orders). */
   adminDeleteLoadTestUsers: (authToken: string) =>

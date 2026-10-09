@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { randomInt, timingSafeEqual } from 'crypto';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module';
+import { canonicalEmail } from '../../common/canonical-email';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { RegisterDto } from './dto/register.dto';
@@ -127,11 +128,17 @@ export class AuthService {
    * which is what proves the email address is really reachable by its owner.
    */
   async register(dto: RegisterDto) {
-    // Case-insensitive: the pending/attempt keys in Redis are lowercased, so
-    // "Victim@gmail.com" and "victim@gmail.com" would otherwise be two
-    // accounts that share one verification and lockout state.
+    // Same mailbox, not just same spelling: Gmail ignores dots and "+tag", and
+    // the pending/attempt keys in Redis are lowercased — so "Victim@gmail.com",
+    // "vic.tim@gmail.com" and "victim+2@gmail.com" must not become extra
+    // accounts (each would get its own "one seat" allowance).
     const existing = await this.prisma.user.findFirst({
-      where: { email: { equals: dto.email, mode: 'insensitive' } },
+      where: {
+        OR: [
+          { emailKey: canonicalEmail(dto.email) },
+          { email: { equals: dto.email, mode: 'insensitive' } },
+        ],
+      },
     });
     if (existing) {
       throw new ConflictException('Email already registered');
@@ -203,17 +210,37 @@ export class AuthService {
       throw new BadRequestException('Incorrect verification code');
     }
 
-    const existing = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { emailKey: canonicalEmail(dto.email) },
+          { email: { equals: dto.email, mode: 'insensitive' } },
+        ],
+      },
     });
     if (existing) {
       await this.redis.del(key);
       throw new ConflictException('Email already registered');
     }
 
-    const user = await this.prisma.user.create({
-      data: { email: dto.email, passwordHash: pending.passwordHash },
-    });
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email: dto.email,
+          emailKey: canonicalEmail(dto.email),
+          passwordHash: pending.passwordHash,
+        },
+      });
+    } catch (error: any) {
+      // Two aliases of one mailbox verified at the same moment both passed the
+      // check above; the unique emailKey lets only one of them in.
+      if (error?.code === 'P2002') {
+        await this.redis.del(key);
+        throw new ConflictException('Email already registered');
+      }
+      throw error;
+    }
     await this.redis.del(key);
 
     return this.buildTokenResponse(user.id, user.email, user.role);

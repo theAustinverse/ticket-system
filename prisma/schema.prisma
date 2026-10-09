@@ -16,6 +16,12 @@ datasource db {
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
+  /// The mailbox the address really delivers to (canonicalEmail()): Gmail
+  /// ignores dots and "+tag", so a.b@gmail.com and ab+1@gmail.com are one
+  /// inbox. Unique, so one person can't register many accounts — and so many
+  /// "own seats" — out of one Gmail address. Null only for the accounts that,
+  /// when this was added, already shared a mailbox with an older account.
+  emailKey     String?  @unique
   passwordHash String
   role         Role     @default(USER)
   createdAt    DateTime @default(now())

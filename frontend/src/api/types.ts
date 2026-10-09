@@ -259,6 +259,8 @@ export interface AdminOrderSummary {
 export interface AdminUser {
   id: string;
   email: string;
+  /** True for an account that shared a Gmail inbox (dots / +tag aliases) with an older account when that was made impossible. */
+  sharedMailbox: boolean;
   role: 'USER' | 'ADMIN';
   name: string | null;
   team: string | null;

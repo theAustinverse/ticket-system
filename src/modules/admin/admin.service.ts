@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -29,11 +30,12 @@ export class AdminService {
    * table groups by this "主揪" identity so a person's repeated group-ticket
    * orders collapse into one expandable row instead of one row per order.
    */
-  listUsers() {
-    return this.prisma.user.findMany({
+  async listUsers() {
+    const users = await this.prisma.user.findMany({
       select: {
         id: true,
         email: true,
+        emailKey: true,
         role: true,
         name: true,
         team: true,
@@ -59,6 +61,14 @@ export class AdminService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    // A null emailKey marks an account that already shared a Gmail inbox with
+    // an older account when the one-account-per-inbox rule was introduced
+    // (a.b@gmail.com / ab+1@gmail.com). Flag it so the back office can see
+    // who may be holding more than one "own seat".
+    return users.map(({ emailKey, ...user }) => ({
+      ...user,
+      sharedMailbox: emailKey === null,
+    }));
   }
 
   /** One row per order, flattened with the owning user's email — feeds the order-management table. */
@@ -425,7 +435,7 @@ export class AdminService {
    * group-bundle cap (maxGroupOrders) also gets its bundle counter resynced
    * from a real count of its own PAID orders (each one bundle).
    */
-  async resetStock() {
+  async resetStock(options: { force?: boolean } = {}) {
     const ticketTypes = await this.prisma.ticketType.findMany({
       select: {
         id: true,
@@ -434,8 +444,38 @@ export class AdminService {
         sharedStockKey: true,
         poolTotalQuantity: true,
         maxGroupOrders: true,
+        batch: { select: { name: true, saleStartAt: true, saleEndAt: true } },
       },
     });
+
+    // An order takes its seats in Redis first and is written to Postgres a
+    // moment later. A reset in that gap counts only what is already in
+    // Postgres, so it hands the in-flight orders' seats back to the pool and
+    // the event can sell more than it has. So while a wave is on sale this
+    // needs an explicit "I know" (force), not just a click.
+    const now = Date.now();
+    const onSale = [
+      ...new Set(
+        ticketTypes
+          .filter(
+            ({ batch }) =>
+              batch.saleStartAt &&
+              batch.saleStartAt.getTime() <= now &&
+              (!batch.saleEndAt || batch.saleEndAt.getTime() > now),
+          )
+          .map(({ batch }) => batch.name),
+      ),
+    ];
+    if (onSale.length > 0) {
+      if (!options.force) {
+        throw new ConflictException(
+          `目前有波次正在開賣（${onSale.join('、')}）。此時重設庫存，可能把正在下單、尚未寫入資料庫的座位重新放回票池而造成超賣。建議等該波停售後再執行；若確定要現在執行，請再確認一次。`,
+        );
+      }
+      new Logger(AdminService.name).warn(
+        `resetStock forced while on sale: ${onSale.join(', ')}`,
+      );
+    }
 
     const results: { id: string; name: string; resetTo: number }[] = [];
     const pooled = new Map<string, typeof ticketTypes>();

@@ -201,7 +201,17 @@ export function AdminUsersPage() {
                     onChange={() => toggleSelected(user.id)}
                   />
                 </td>
-                <td data-label="Email">{user.email}</td>
+                <td data-label="Email">
+                  {user.email}
+                  {user.sharedMailbox && (
+                    <span
+                      className="badge"
+                      title="這個帳號的 Gmail 信箱和較早註冊的帳號是同一個（句點或 +標籤 的別名），一人一席的限制可能被繞過"
+                    >
+                      同信箱別名
+                    </span>
+                  )}
+                </td>
                 <td data-label="姓名">{user.name ?? '未填寫'}</td>
                 <td data-label="聯絡資訊">
                   LINE: {user.lineId ?? '未填寫'}
