@@ -160,7 +160,7 @@ describe('HelpBotBrain with Claude', () => {
     const res = await brainWith(create).answer('怎麼退票');
     expect(res.answer).toBe('點退票');
     const arg = create.mock.calls[0][0];
-    expect(arg.model).toBe('claude-opus-5-5');
+    expect(arg.model).toBe('claude-haiku-5-5');
     expect(arg.system).toContain('知識庫');
     expect(arg.messages).toEqual([{ role: 'user', content: '怎麼退票' }]);
   });

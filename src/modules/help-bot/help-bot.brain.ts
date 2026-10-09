@@ -9,7 +9,7 @@ export interface BotVerdict {
 }
 
 const GEMINI_MODEL = process.env.HELP_BOT_MODEL ?? 'gemini-2.5-flash';
-const CLAUDE_MODEL = process.env.HELP_BOT_CLAUDE_MODEL ?? 'claude-opus-5-5';
+const CLAUDE_MODEL = process.env.HELP_BOT_CLAUDE_MODEL ?? 'claude-haiku-5-5';
 /** Fallback matcher: how many keyword hits an FAQ needs before we trust it. */
 const MIN_KEYWORD_SCORE = 1;
 
