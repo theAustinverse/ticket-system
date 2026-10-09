@@ -6,15 +6,19 @@ import type { EventSummary } from '../api/types';
 import { PageLoading } from '../components/PageLoading';
 import { SponsorBox } from '../components/SponsorBox';
 import { ContactBox } from '../components/ContactBox';
+import { ChangelogBox } from '../components/ChangelogBox';
+import { ChangelogPopup } from '../components/ChangelogPopup';
+import { CHANGELOG, recentEntries } from '../changelog';
 import { Reveal } from '../components/Reveal';
 import { motionIsOff } from '../components/motionPrefs';
 import eventPoster from '../assets/poster/event-poster.webp';
 
-const CHAPTERS = [
+const BASE_CHAPTERS = [
   { id: 'home-top', label: '首頁' },
   { id: 'home-events', label: '活動列表' },
   { id: 'home-more', label: '贊助與聯絡' },
-] as const;
+];
+const CHANGELOG_CHAPTER = { id: 'home-changelog', label: '更新日誌' };
 
 /** Taipei time, matching the rest of the site, whatever the visitor's device clock says. */
 function formatSession(startTime: string): string {
@@ -41,8 +45,10 @@ export function EventListPage() {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [active, setActive] = useState<string>(CHAPTERS[0].id);
+  const [active, setActive] = useState<string>(BASE_CHAPTERS[0].id);
   const { token } = useAuth();
+  const showChangelog = recentEntries(CHANGELOG).length > 0;
+  const chapters = showChangelog ? [...BASE_CHAPTERS, CHANGELOG_CHAPTER] : BASE_CHAPTERS;
   const heroRef = useRef<HTMLElement | null>(null);
   const barRef = useRef<HTMLSpanElement | null>(null);
 
@@ -99,12 +105,12 @@ export function EventListPage() {
       },
       { threshold: [0.25, 0.5, 0.75] },
     );
-    for (const c of CHAPTERS) {
+    for (const c of chapters) {
       const el = document.getElementById(c.id);
       if (el) io.observe(el);
     }
     return () => io.disconnect();
-  }, [loading, error]);
+  }, [loading, error, chapters.length]);
 
   if (loading) return <PageLoading />;
   if (error) return <div className="page error">{error}</div>;
@@ -125,7 +131,7 @@ export function EventListPage() {
         <span ref={barRef} />
       </div>
       <nav className="home-dots" aria-label="首頁章節">
-        {CHAPTERS.map((c) => (
+        {chapters.map((c) => (
           <button
             key={c.id}
             type="button"
@@ -217,6 +223,19 @@ export function EventListPage() {
           <ContactBox />
         </Reveal>
       </section>
+
+      {showChangelog && (
+        <section id="home-changelog" className="home-chapter">
+          <Reveal as="h2" className="home-chapter-title">
+            <span className="home-chapter-no">03</span>更新日誌
+          </Reveal>
+          <Reveal from="up">
+            <ChangelogBox />
+          </Reveal>
+        </section>
+      )}
+
+      <ChangelogPopup />
     </div>
   );
 }

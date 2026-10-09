@@ -2507,3 +2507,20 @@ button:disabled {
 .admin-help-actions { display: flex; gap: 0.5rem; }
 .admin-help-ESCALATED { color: #ff8a7a; font-weight: 600; }
 @media (max-width: 640px) { .help-widget { bottom: 8rem; } }
+
+/* ---------- changelog (更新日誌): home section + popup ---------- */
+.changelog-box { margin: 0 0 1.6rem; }
+.changelog-box h2 { display: none; } /* the chapter title above already says it */
+.changelog-list { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.8rem; }
+.changelog-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  background: rgba(6, 4, 3, 0.4);
+}
+.changelog-list p { margin: 0.25rem 0 0; font-size: 0.9rem; color: var(--paper-dim); }
+.changelog-date { font-family: 'Noto Serif TC', serif; color: var(--gold); white-space: nowrap; }
+.changelog-popup { max-width: 480px; }
+.changelog-popup .hint { margin: 0; }
