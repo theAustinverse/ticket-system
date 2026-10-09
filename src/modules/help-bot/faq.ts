@@ -1,4 +1,10 @@
 import { REFUND_CUTOFF_DAYS } from '../order/order.constants';
+import {
+  MAX_PENDING_PER_USER,
+  SPONSOR_MAX_AMOUNT,
+  SPONSOR_MIN_AMOUNT,
+  SPONSOR_PRESETS,
+} from '../sponsorship/sponsorship.constants';
 
 /**
  * What the help bot is allowed to know. Every answer here is a statement about
@@ -86,5 +92,15 @@ export const FAQ: FaqEntry[] = [
     q: '怎麼聯絡主辦單位／窗口？',
     a: '點上方的「聯絡我們」，有公開的聯絡窗口與官方 LINE。',
     keywords: ['聯絡', '窗口', '客服', 'LINE', '官方'],
+  },
+  {
+    q: '小額贊助怎麼用？要怎麼付款？',
+    a: `在首頁活動列表下方的「小額贊助」區塊操作（需先登入）：① 選金額（${SPONSOR_PRESETS.map((n) => `NT$${n}`).join('、')}，或自訂 NT$${SPONSOR_MIN_AMOUNT}–${SPONSOR_MAX_AMOUNT.toLocaleString()} 的整數）→ 點「我要贊助」；② 系統會給你一組 6 位數「對帳碼」和轉帳資訊，請照資訊自行轉帳，並且「轉帳備註一定要填這組對帳碼」，行政組才知道是你轉的；③ 轉完後在同一個畫面輸入對帳碼，點「我已轉帳，送出」，行政組就會收到通知，核對後確認。系統本身不會扣款，錢是你自己轉帳過去。`,
+    keywords: ['贊助', '小額', '對帳碼', '贊助金額', '捐款', '支持'],
+  },
+  {
+    q: '贊助選了金額但還沒轉帳／離開頁面了怎麼辦？',
+    a: `不用擔心：回到首頁的「小額贊助」區塊，系統會把你尚未送出的那一筆和對帳碼顯示回來，直接繼續轉帳即可。每個帳號最多同時有 ${MAX_PENDING_PER_USER} 筆尚未完成的贊助，請先完成或等行政組核對後再新增。`,
+    keywords: ['贊助', '對帳碼', '離開', '忘了', '找不到對帳碼', '還沒轉'],
   },
 ];

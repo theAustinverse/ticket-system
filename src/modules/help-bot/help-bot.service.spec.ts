@@ -121,6 +121,12 @@ describe('HelpBotBrain keyword fallback', () => {
     expect(brain.matchKeywords('請問怎麼退票？').answer).toContain('退票');
   });
 
+  it('knows how small sponsorship works (the FAQ covers it, with the real amounts)', () => {
+    const a = brain.matchKeywords('小額贊助要怎麼使用？').answer;
+    expect(a).toContain('對帳碼');
+    expect(a).toContain('NT$50');
+  });
+
   it('escalates when nothing matches', () => {
     expect(brain.matchKeywords('今天天氣如何').answer).toBeNull();
   });
