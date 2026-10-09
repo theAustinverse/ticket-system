@@ -178,3 +178,5 @@ Password reset (`forgotPassword`/`resetPassword` in `AuthService`) emails a 6-di
 ### Frontend
 
 Plain CSS, no framework — a 1920s Hong Kong casino gold/red theme driven by custom properties in `frontend/src/styles.css` (`--void`, `--gold`, `--paper`). Match the palette rather than introducing ad hoc colors. All API calls go through the typed client in `frontend/src/api/client.ts`; add endpoints there instead of calling `fetch` from a page. User-facing and `/admin/*` routes are split in `App.tsx` with separate nav bars and separate auth contexts.
+
+The home page (`EventListPage`) is a scroll story: a full-screen hero, then chapters whose blocks fade in via `Reveal` (IntersectionObserver, once), a progress line and side dots. Two things to keep: `Reveal` must render already-visible when motion is off (`motionIsOff()` — reduced motion or no IntersectionObserver), or those visitors would see an empty page; and the guided tour finds the event link by `.event-list a[href^="/events/"]`, so keep that structure. It is presentation only — the purchase path doesn't go through it.

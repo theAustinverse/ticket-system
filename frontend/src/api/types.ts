@@ -77,6 +77,8 @@ export interface EventSummary {
   id: string;
   name: string;
   description: string | null;
+  /** The list endpoint includes each session's venue and time (but not its waves). */
+  sessions?: { id: string; venue: string; startTime: string; mapUrl: string | null }[];
 }
 
 export interface EventDetail extends EventSummary {
