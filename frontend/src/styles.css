@@ -1548,7 +1548,20 @@ button:disabled {
   padding: 1.1rem 1.2rem 1rem;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(201, 162, 39, 0.12);
   color: var(--paper);
+  /* Never taller than the screen: the text scrolls, the 上一步／下一步 row stays put. */
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
 }
+.tour-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
+}
+.tour-tooltip .tour-controls { flex: none; }
 .tour-step-count {
   margin: 0 0 0.35rem;
   font-family: 'Cinzel', serif;
