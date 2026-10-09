@@ -296,25 +296,38 @@ h4 {
 }
 
 @media (max-width: 640px) {
+  /*
+   * Seven links (使用教學, 入場教學, 聯絡我們, 我的票券, 設定, 登出 + the brand)
+   * are ~545px wide in one row: on a phone that pushed the whole page sideways
+   * and the browser zoomed out to fit it. So the bar wraps — brand on top,
+   * links below, wrapping again on the narrowest screens — and, being two or
+   * three rows tall, scrolls away with the page instead of pinning a big
+   * block over the content (the scam notice above it stays pinned).
+   */
   .navbar {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    row-gap: 0.55rem;
     gap: 0.4rem;
-    padding: 0.85rem 0.75rem;
+    padding: 0.7rem 0.75rem;
+    position: static;
   }
   .navbar .brand {
     font-size: 0.95rem;
     white-space: nowrap;
-    flex-shrink: 0;
+    flex: 0 0 auto;
   }
   .navbar-actions {
-    flex-wrap: nowrap;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
     gap: 0.4rem;
-    width: auto;
+    width: 100%;
+    min-width: 0;
   }
   .navbar-actions a,
   .navbar-actions button {
-    font-size: 0.75rem;
-    padding: 0.35rem 0.55rem !important;
+    font-size: 0.78rem;
+    padding: 0.35rem 0.6rem !important;
     white-space: nowrap;
   }
 }
@@ -2542,3 +2555,8 @@ button:disabled {
 /* Only the list scrolls; the title and the 知道了 button stay put and are never squeezed. */
 .changelog-popup > * { flex: none; }
 .changelog-popup .changelog-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.2rem; }
+
+/* Phone: the navbar is two or three rows tall and no longer pinned, so the hero leaves room for it. */
+@media (max-width: 640px) {
+  .home-hero { min-height: calc(100svh - var(--notice-h, 0px) - 7.5rem); }
+}
