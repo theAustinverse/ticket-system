@@ -2231,8 +2231,9 @@ button:disabled {
   display: flex;
   flex: none;
   width: max-content;
-  animation: notice-scroll 28s linear infinite;
+  animation: notice-scroll 28s linear infinite; /* duration is set from the measured width */
 }
+.notice-marquee-group { display: flex; flex: none; }
 .notice-marquee:hover .notice-marquee-track { animation-play-state: paused; }
 .notice-marquee-item {
   flex: none;
@@ -2247,7 +2248,8 @@ button:disabled {
   .notice-marquee { height: auto; min-height: 2.3rem; padding: 0.35rem 1rem; }
   .notice-marquee-track { animation: none; width: auto; }
   .notice-marquee-item { white-space: normal; padding-right: 0; }
-  .notice-marquee-item[aria-hidden='true'] { display: none; }
+  .notice-marquee-item:nth-child(n + 2),
+  .notice-marquee-group[aria-hidden='true'] { display: none; }
 }
 
 /* ---------- home: scroll-triggered story ---------- */
