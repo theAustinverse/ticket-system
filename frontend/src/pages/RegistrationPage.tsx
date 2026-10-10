@@ -11,6 +11,7 @@ import {
   type MemberKind,
 } from '../components/MemberIdentityFields';
 import { TEAM_OPTIONS } from '../constants';
+import { TeamMissingHint } from '../components/TeamMissingHint';
 
 const COMPANION_RELATIONSHIPS = ['父母', '兄弟姊妹', '伴侶', '子女'] as const;
 
@@ -345,6 +346,7 @@ export function RegistrationPage() {
                   </option>
                 ))}
               </select>
+              <TeamMissingHint />
             </label>
             <label>
               LINE ID

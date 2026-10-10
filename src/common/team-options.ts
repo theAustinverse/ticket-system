@@ -32,7 +32,6 @@ export const TEAM_OPTIONS: readonly string[] = [
   '咏璇',
   '靜靜',
   '朱佳期',
-  '其他',
 ];
 
 export const TEAM_MESSAGE = '所屬系統/團隊必須是清單內的選項';

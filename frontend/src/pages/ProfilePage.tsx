@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { TEAM_OPTIONS } from '../constants';
+import { TeamMissingHint } from '../components/TeamMissingHint';
 
 const CHINESE_NAME_REGEX = /^[一-鿿]+$/;
 
@@ -148,6 +149,7 @@ export function ProfilePage() {
               </option>
             ))}
           </select>
+          <TeamMissingHint />
         </label>
         <label>
           LINE ID
