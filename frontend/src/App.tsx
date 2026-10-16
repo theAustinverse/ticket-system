@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react';
-import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { lazy, Suspense, useLayoutEffect } from 'react';
+import { Link, Route, Routes, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { CinematicBackground } from './components/CinematicBackground';
 import { Prologue } from './components/Prologue';
 import { BackgroundMusic } from './components/BackgroundMusic';
@@ -134,6 +134,14 @@ function CheckinNavBar() {
 export function App() {
   const location = useLocation();
   const { shown, fx, done } = useRouteTransition();
+  // The router keeps the old scroll offset, so a page opened from the bottom
+  // of another (footer links) would start mid-text. Back/forward (POP) and
+  // #anchor links keep the browser's own behaviour.
+  const navType = useNavigationType();
+  useLayoutEffect(() => {
+    if (navType === 'POP' || shown.hash) return;
+    window.scrollTo(0, 0);
+  }, [shown.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   const isAdminRoute = location.pathname.startsWith('/admin');
   const isCheckinRoute = location.pathname.startsWith('/checkin');
   // A guest opening their shared ticket at the door, or a scanner phone, must
