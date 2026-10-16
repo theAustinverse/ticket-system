@@ -54,7 +54,7 @@ export function buildSteps(eventId: string | null): TourStep[] {
       route: '/events',
       selector: '.navbar-actions a[href="/contact"]',
       title: '聯絡我們',
-      body: '有問題想找人，點這裡看公開的聯絡窗口（姓名、LINE ID、Email），頁面上方還有「官方 LINE」可以一鍵加入。',
+      body: '有問題想找人，點這裡看公開的聯絡窗口（姓名、LINE ID、Email），頁面上方還有「系統管理者 LINE 帳號」可以一鍵加入。',
     },
     {
       kind: 'real',

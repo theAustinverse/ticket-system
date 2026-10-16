@@ -11,7 +11,7 @@ export function OfficialLine() {
     >
       <span className="official-line-badge">LINE</span>
       <span className="official-line-text">
-        <strong>加入官方 LINE</strong>
+        <strong>加入系統管理者LINE帳號</strong>
         <small>點此加入，直接與我們聯絡</small>
       </span>
       <span className="official-line-go" aria-hidden="true">→</span>
