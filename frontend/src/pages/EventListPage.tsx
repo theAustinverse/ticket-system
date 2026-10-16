@@ -5,7 +5,6 @@ import { useAuth } from '../context/AuthContext';
 import type { EventSummary } from '../api/types';
 import { PageLoading } from '../components/PageLoading';
 import { SponsorBox } from '../components/SponsorBox';
-import { ContactBox } from '../components/ContactBox';
 import { ChangelogBox } from '../components/ChangelogBox';
 import { SiteFooter } from '../components/SiteFooter';
 import { ChangelogPopup } from '../components/ChangelogPopup';
@@ -219,9 +218,6 @@ export function EventListPage() {
         </Reveal>
         <Reveal from="up">
           <SponsorBox />
-        </Reveal>
-        <Reveal from="up" delay={120}>
-          <ContactBox />
         </Reveal>
       </section>
 
