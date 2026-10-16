@@ -16,7 +16,7 @@ import eventPoster from '../assets/poster/event-poster.webp';
 const BASE_CHAPTERS = [
   { id: 'home-top', label: '首頁' },
   { id: 'home-events', label: '活動列表' },
-  { id: 'home-more', label: '贊助與聯絡' },
+  { id: 'home-more', label: '小額贊助' },
 ];
 const CHANGELOG_CHAPTER = { id: 'home-changelog', label: '更新日誌' };
 
@@ -214,7 +214,7 @@ export function EventListPage() {
 
       <section id="home-more" className="home-chapter">
         <Reveal as="h2" className="home-chapter-title">
-          <span className="home-chapter-no">02</span>贊助與聯絡
+          <span className="home-chapter-no">02</span>小額贊助
         </Reveal>
         <Reveal from="up">
           <SponsorBox />
