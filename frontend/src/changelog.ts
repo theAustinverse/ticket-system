@@ -17,6 +17,12 @@ export const RECENT_DAYS = 3;
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: '2026-10-16-legal',
+    date: '2026-10-16',
+    title: '新增隱私政策與服務條款',
+    body: '首頁最下方新增「隱私政策」和「服務條款」連結，說明我們蒐集哪些資料、怎麼使用，以及購票、退票、轉讓與入場的規則。',
+  },
+  {
     id: '2026-10-09-tour-update',
     date: '2026-10-09',
     title: '使用教學更新',

@@ -15,6 +15,8 @@ import { OrderStatusPage } from './pages/OrderStatusPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { MyTicketsPage } from './pages/MyTicketsPage';
 import { PublicTicketPage } from './pages/PublicTicketPage';
+import { PrivacyPage } from './pages/PrivacyPage';
+import { TermsPage } from './pages/TermsPage';
 import { CHECKIN_TOKEN_KEY } from './api/client';
 import { decodeJwtClaim } from './jwt';
 import { useAuth } from './context/AuthContext';
@@ -164,6 +166,8 @@ export function App() {
         <Route path="/orders/:orderId" element={<OrderStatusPage />} />
         <Route path="/entry-guide" element={<EntryGuidePage />} />
         <Route path="/contact" element={<ContactPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
         <Route path="/t/:token" element={<PublicTicketPage />} />
         <Route path="/checkin/login" element={<CheckinLoginPage />} />
         <Route path="/checkin" element={<CheckinPage />} />

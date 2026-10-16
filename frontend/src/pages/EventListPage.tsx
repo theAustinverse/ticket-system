@@ -7,6 +7,7 @@ import { PageLoading } from '../components/PageLoading';
 import { SponsorBox } from '../components/SponsorBox';
 import { ContactBox } from '../components/ContactBox';
 import { ChangelogBox } from '../components/ChangelogBox';
+import { SiteFooter } from '../components/SiteFooter';
 import { ChangelogPopup } from '../components/ChangelogPopup';
 import { CHANGELOG, recentEntries } from '../changelog';
 import { Reveal } from '../components/Reveal';
@@ -235,6 +236,7 @@ export function EventListPage() {
         </section>
       )}
 
+      <SiteFooter />
       <ChangelogPopup />
     </div>
   );

@@ -2560,3 +2560,17 @@ button:disabled {
 @media (max-width: 640px) {
   .home-hero { min-height: calc(100svh - var(--notice-h, 0px) - 7.5rem); }
 }
+
+/* home page footer + legal pages */
+.site-footer {
+  display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+  margin: 3rem 0 0; padding: 1.6rem 1rem 2.4rem;
+  border-top: 1px solid rgba(201, 162, 74, 0.25);
+  color: var(--paper-dim, rgba(243, 231, 204, 0.6));
+}
+.site-footer nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem 0.9rem; }
+.site-footer a { color: var(--gold-bright); }
+.legal-page h2 { margin: 1.8rem 0 0.5rem; font-size: 1.2rem; color: var(--gold-bright); }
+.legal-page ul { padding-left: 1.2rem; display: grid; gap: 0.45rem; }
+.legal-page a { color: var(--gold-bright); }
+.legal-links { margin-top: 2rem; }
