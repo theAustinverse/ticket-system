@@ -17,6 +17,12 @@ export const RECENT_DAYS = 3;
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: '2026-10-17-headline-news',
+    date: '2026-10-17',
+    title: '首頁新增頭條新聞「賽馬公報」',
+    body: '首頁活動列表上方新增頭條新聞，刊出財神時報的賽馬公報。點圖片可以放大，手機也能看清楚小字。',
+  },
+  {
     id: '2026-10-17-crypto-sponsor',
     date: '2026-10-17',
     title: '小額贊助新增加密貨幣選項',

@@ -7,12 +7,14 @@ import { PageLoading } from '../components/PageLoading';
 import { SponsorBox } from '../components/SponsorBox';
 import { ChangelogBox } from '../components/ChangelogBox';
 import { SiteFooter } from '../components/SiteFooter';
+import { NewsHeadline } from '../components/NewsHeadline';
 import { ChangelogPopup } from '../components/ChangelogPopup';
 import { CHANGELOG, recentEntries } from '../changelog';
 import { Reveal } from '../components/Reveal';
 import { motionIsOff } from '../components/motionPrefs';
 import eventPoster from '../assets/poster/event-poster.webp';
 
+const NEWS_CHAPTER = { id: 'home-news', label: '頭條新聞' };
 const BASE_CHAPTERS = [
   { id: 'home-top', label: '首頁' },
   { id: 'home-events', label: '活動列表' },
@@ -48,7 +50,14 @@ export function EventListPage() {
   const [active, setActive] = useState<string>(BASE_CHAPTERS[0].id);
   const { token } = useAuth();
   const showChangelog = recentEntries(CHANGELOG).length > 0;
-  const chapters = showChangelog ? [...BASE_CHAPTERS, CHANGELOG_CHAPTER] : BASE_CHAPTERS;
+  // The headline image can be absent (file not deployed yet): then no section and no dot.
+  const [newsOk, setNewsOk] = useState(true);
+  const chapters = [
+    BASE_CHAPTERS[0],
+    ...(newsOk ? [NEWS_CHAPTER] : []),
+    ...BASE_CHAPTERS.slice(1),
+    ...(showChangelog ? [CHANGELOG_CHAPTER] : []),
+  ];
   const heroRef = useRef<HTMLElement | null>(null);
   const barRef = useRef<HTMLSpanElement | null>(null);
 
@@ -173,6 +182,15 @@ export function EventListPage() {
           <i />
         </div>
       </header>
+
+      {newsOk && (
+        <section id="home-news" className="home-chapter home-news">
+          <Reveal as="h2" className="home-chapter-title">頭條新聞</Reveal>
+          <Reveal from="up">
+            <NewsHeadline onMissing={() => setNewsOk(false)} />
+          </Reveal>
+        </section>
+      )}
 
       <section id="home-events" className="home-chapter">
         <Reveal as="h2" className="home-chapter-title">
