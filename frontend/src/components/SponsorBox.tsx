@@ -153,12 +153,12 @@ export function SponsorBox() {
           <div className="sponsor-crypto">
             <h3>或用加密貨幣贊助（選用）</h3>
             <p className="sponsor-warn">
-              只收 <strong>{info.crypto.coins.join(' 或 ')}</strong>，網路必須選{' '}
+              只收 <strong>{(info.crypto.coins ?? []).join(' 或 ')}</strong>，網路必須選{' '}
               <strong>{info.crypto.network}</strong>。轉其他幣（例如 BNB）或選錯網路，款項通常無法找回。
             </p>
             <CryptoAddress address={info.crypto.address} />
             <p className="hint">
-              轉帳前請核對地址的前 8 碼與最後 6 碼（粗體處）。金額請依當日匯率，轉約 NT$ {created.amount.toLocaleString()} 等值的美元（{info.crypto.coins.join(' 或 ')} 約等於 1 美元）。
+              轉帳前請核對地址的前 8 碼與最後 6 碼（粗體處）。金額請依當日匯率，轉約 NT$ {created.amount.toLocaleString()} 等值的美元（{(info.crypto.coins ?? []).join(' 或 ')} 約等於 1 美元）。
               {info.crypto.memo && <> 備註／Memo 請填 <strong>{info.crypto.memo}</strong>。</>}
             </p>
             <button type="button" className="link-button" onClick={() => copyAddress(info.crypto!.address)}>
@@ -208,6 +208,11 @@ export function SponsorBox() {
     <section className="sponsor-box">
       <h2>小額贊助</h2>
       <p className="hint">支持行政組與創作者，讓活動更精彩。金額隨喜，感謝你！</p>
+      {info.crypto && (
+        <p className="hint">
+          付款方式有銀行轉帳，也可以用加密貨幣（{(info.crypto.coins ?? []).join('、')}，{info.crypto.network}）。選好金額、按「我要贊助」後，會看到收款資訊。
+        </p>
+      )}
       <div className="sponsor-options" role="radiogroup" aria-label="贊助金額">
         {info.presets.map((n) => (
           <button
