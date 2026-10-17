@@ -17,6 +17,12 @@ export const RECENT_DAYS = 3;
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: '2026-10-17-crypto-sponsor',
+    date: '2026-10-17',
+    title: '小額贊助新增加密貨幣選項',
+    body: '小額贊助現在也能用 BNB（BNB Smart Chain，BEP-20）贊助。選好金額後會看到收款地址，轉帳後貼上交易哈希即可，轉帳前請核對地址的前後碼。',
+  },
+  {
     id: '2026-10-16-legal',
     date: '2026-10-16',
     title: '新增隱私政策與服務條款',

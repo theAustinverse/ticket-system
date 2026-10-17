@@ -23,7 +23,7 @@ export const SPONSOR_CRYPTO: {
 } = {
   coin: 'BNB',
   network: 'BNB Smart Chain (BEP-20)',
-  address: null,
+  address: '0x49ce275971cda31c60b1cf70dd8730fd6ab7aa07',
   memo: null,
 };
 
