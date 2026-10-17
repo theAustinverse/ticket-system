@@ -347,6 +347,11 @@ model Sponsorship {
   /// bank memo, so this is the only enforceable form of "must quote the
   /// code": it's a claim to check against the statement, not proof of payment.
   reportedAt    DateTime?
+  /// BNB Smart Chain transaction hash the sponsor pasted when paying with
+  /// crypto (a chain transfer can't carry the 6-digit memo). Unique so one
+  /// transfer can't be claimed by two pledges; the admin still checks it on
+  /// the chain explorer — like reportedAt it is a claim, not proof.
+  txHash        String?           @unique
 
   @@index([userId])
   @@index([status, createdAt])

@@ -37,7 +37,7 @@ export class SponsorshipController {
   @UseGuards(JwtAuthGuard)
   @RateLimit(10, 60)
   report(@Req() req: any, @Param('id') id: string, @Body() dto: ReportSponsorshipDto) {
-    return this.service.report(req.user.userId, id, dto.referenceCode);
+    return this.service.report(req.user.userId, id, dto.referenceCode, dto.txHash);
   }
 
   @Get('mine')

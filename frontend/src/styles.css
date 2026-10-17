@@ -2574,3 +2574,13 @@ button:disabled {
 .legal-page ul { padding-left: 1.2rem; display: grid; gap: 0.45rem; }
 .legal-page a { color: var(--gold-bright); }
 .legal-links { margin-top: 2rem; }
+
+/* crypto sponsorship option */
+.sponsor-crypto { margin: 1.2rem 0; padding: 1rem; border: 1px dashed rgba(201, 162, 74, 0.45); }
+.sponsor-crypto h3 { margin: 0 0 0.6rem; color: var(--gold-bright); }
+.sponsor-address {
+  display: block; padding: 0.7rem 0.8rem; margin: 0.6rem 0;
+  background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(201, 162, 74, 0.3);
+  font-size: 0.95rem; line-height: 1.6; word-break: break-all; user-select: all;
+}
+.sponsor-address strong { color: var(--gold-bright); }

@@ -338,6 +338,15 @@ export interface SponsorshipInfo {
   minAmount: number;
   maxAmount: number;
   paymentInfo: string | null;
+  /** Null while the crypto option is off. */
+  crypto: SponsorshipCrypto | null;
+}
+
+export interface SponsorshipCrypto {
+  coin: string;
+  network: string;
+  address: string;
+  memo: string | null;
 }
 
 export interface MySponsorship {
@@ -347,6 +356,7 @@ export interface MySponsorship {
   status: SponsorshipStatus;
   createdAt: string;
   reportedAt: string | null;
+  txHash: string | null;
 }
 
 export interface CreatedSponsorship extends MySponsorship {

@@ -21,7 +21,7 @@ function csvCell(v: string | number): string {
 }
 
 function exportCsv(rows: AdminSponsorship[]) {
-  const head = ['時間', '贊助者', 'Email', '金額', '對帳碼', '狀態', '轉帳回報時間', '確認時間'];
+  const head = ['時間', '贊助者', 'Email', '金額', '對帳碼', '狀態', '轉帳回報時間', '交易哈希', '確認時間'];
   const lines = rows.map((r) =>
     [
       new Date(r.createdAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
@@ -33,6 +33,7 @@ function exportCsv(rows: AdminSponsorship[]) {
       r.reportedAt
         ? new Date(r.reportedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
         : '',
+      r.txHash ?? '',
       r.confirmedAt
         ? new Date(r.confirmedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
         : '',
@@ -136,6 +137,7 @@ export function AdminSponsorshipsPage() {
               <th>對帳碼</th>
               <th>狀態</th>
               <th>轉帳回報</th>
+              <th>鏈上交易</th>
               <th></th>
             </tr>
           </thead>
@@ -155,6 +157,20 @@ export function AdminSponsorshipsPage() {
                   {r.reportedAt
                     ? new Date(r.reportedAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
                     : '—'}
+                </td>
+                <td>
+                  {r.txHash ? (
+                    <a
+                      href={`https://bscscan.com/tx/${r.txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={r.txHash}
+                    >
+                      {r.txHash.slice(0, 10)}…{r.txHash.slice(-6)}
+                    </a>
+                  ) : (
+                    '—'
+                  )}
                 </td>
                 <td>
                   {r.status !== 'RECEIVED' && (

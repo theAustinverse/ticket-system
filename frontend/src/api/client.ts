@@ -232,11 +232,11 @@ export const api = {
       body: JSON.stringify({ amount }),
     }),
 
-  reportSponsorship: (authToken: string, id: string, referenceCode: string) =>
+  reportSponsorship: (authToken: string, id: string, referenceCode: string, txHash?: string) =>
     request<MySponsorship>(`/sponsorships/${id}/report`, {
       method: 'POST',
       headers: authHeader(authToken),
-      body: JSON.stringify({ referenceCode }),
+      body: JSON.stringify(txHash ? { referenceCode, txHash } : { referenceCode }),
     }),
 
   listMySponsorships: (authToken: string) =>

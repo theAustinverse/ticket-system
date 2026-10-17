@@ -5,6 +5,19 @@ import { useAuth } from '../context/AuthContext';
 import type { MySponsorship, SponsorshipInfo } from '../api/types';
 import { Icon3D } from './Icon3D';
 
+const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
+
+/** Address with the first and last 6 characters emphasised, so sponsors can check them against the source. */
+function CryptoAddress({ address }: { address: string }) {
+  return (
+    <code className="sponsor-address">
+      <strong>{address.slice(0, 8)}</strong>
+      {address.slice(8, -6)}
+      <strong>{address.slice(-6)}</strong>
+    </code>
+  );
+}
+
 /** Sentinel for the 4th option; the three presets are plain numbers. */
 const CUSTOM = 'custom';
 
@@ -23,6 +36,8 @@ export function SponsorBox() {
   const [created, setCreated] = useState<MySponsorship | null>(null);
   const [typedCode, setTypedCode] = useState('');
   const [reported, setReported] = useState(false);
+  const [txHash, setTxHash] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     api.getSponsorshipInfo().then(setInfo).catch(() => setInfo(null));
@@ -68,8 +83,20 @@ export function SponsorBox() {
     setChoice(null);
     setCustom('');
     setTypedCode('');
+    setTxHash('');
     setReported(false);
     setError(null);
+  }
+
+  async function copyAddress(address: string) {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard refused (older in-app browsers): the address is selectable text
+      setCopied(false);
+    }
   }
 
   async function report() {
@@ -77,7 +104,7 @@ export function SponsorBox() {
     setSubmitting(true);
     setError(null);
     try {
-      await api.reportSponsorship(token, created.id, typedCode);
+      await api.reportSponsorship(token, created.id, typedCode, txHash.trim() || undefined);
       setReported(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '送出失敗，請稍後再試');
@@ -122,6 +149,35 @@ export function SponsorBox() {
         ) : (
           <p className="hint">收款方式將由行政組另行公告。</p>
         )}
+        {info.crypto && (
+          <div className="sponsor-crypto">
+            <h3>或用加密貨幣贊助（選用）</h3>
+            <p className="sponsor-warn">
+              只收 <strong>{info.crypto.coin}</strong>，網路必須選{' '}
+              <strong>{info.crypto.network}</strong>。選錯幣或選錯網路，款項通常無法找回。
+            </p>
+            <CryptoAddress address={info.crypto.address} />
+            <p className="hint">
+              轉帳前請核對地址的前 8 碼與最後 6 碼（粗體處）。金額請轉約 NT$ {created.amount.toLocaleString()} 等值的 {info.crypto.coin}。
+              {info.crypto.memo && <> 備註／Memo 請填 <strong>{info.crypto.memo}</strong>。</>}
+            </p>
+            <button type="button" className="link-button" onClick={() => copyAddress(info.crypto!.address)}>
+              {copied ? '已複製' : '複製地址'}
+            </button>
+            <label className="sponsor-custom">
+              用加密貨幣轉帳無法填備註，請貼上交易哈希（0x 開頭，共 66 個字元），行政組才能在鏈上核對
+              <input
+                type="text"
+                value={txHash}
+                onChange={(e) => setTxHash(e.target.value.trim())}
+                placeholder="0x…"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            {txHash && !TX_HASH_RE.test(txHash) && <p className="error">交易哈希格式不正確</p>}
+          </div>
+        )}
         <label className="sponsor-custom">
           轉帳完成後，請輸入你在備註填寫的對帳碼，才能送出
           <input
@@ -136,7 +192,7 @@ export function SponsorBox() {
         {error && <p className="error">{error}</p>}
         <button
           type="button"
-          disabled={typedCode !== created.referenceCode || submitting}
+          disabled={typedCode !== created.referenceCode || submitting || (txHash !== '' && !TX_HASH_RE.test(txHash))}
           onClick={report}
         >
           {submitting ? '送出中…' : '我已轉帳，送出'}

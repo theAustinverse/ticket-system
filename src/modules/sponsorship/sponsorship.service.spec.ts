@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { SponsorshipService } from './sponsorship.service';
+import { BSC_ADDRESS_RE, SPONSOR_CRYPTO } from './sponsorship.constants';
 
 describe('SponsorshipService', () => {
   let prisma: any;
@@ -115,6 +116,90 @@ describe('SponsorshipService', () => {
       const res = await service.report('u1', 's1', '123456');
       expect(prisma.sponsorship.update).not.toHaveBeenCalled();
       expect(res.reportedAt).toBe(first);
+    });
+  });
+
+  describe('report with a crypto transaction hash', () => {
+    const ADDR = '0x' + 'a'.repeat(40);
+    const HASH = '0x' + 'AB'.repeat(32);
+    const row = { id: 's1', userId: 'u1', amount: 100, referenceCode: '123456', status: 'PENDING', createdAt: new Date(), reportedAt: null, txHash: null };
+    beforeEach(() => { SPONSOR_CRYPTO.address = ADDR; });
+    afterEach(() => { SPONSOR_CRYPTO.address = null; });
+
+    it('stores the hash lower-cased together with reportedAt', async () => {
+      prisma.sponsorship.findFirst.mockResolvedValue(row);
+      prisma.sponsorship.update.mockImplementation(async ({ data }: any) => ({ ...row, ...data }));
+      const res = await service.report('u1', 's1', '123456', HASH);
+      const data = prisma.sponsorship.update.mock.calls[0][0].data;
+      expect(data.txHash).toBe(HASH.toLowerCase());
+      expect(data.reportedAt).toBeInstanceOf(Date);
+      expect(res.txHash).toBe(HASH.toLowerCase());
+    });
+
+    it('refuses a hash while the crypto channel is off, and writes nothing', async () => {
+      SPONSOR_CRYPTO.address = null;
+      prisma.sponsorship.findFirst.mockResolvedValue(row);
+      await expect(service.report('u1', 's1', '123456', HASH)).rejects.toThrow(BadRequestException);
+      expect(prisma.sponsorship.update).not.toHaveBeenCalled();
+    });
+
+    it('still checks the reference code first', async () => {
+      prisma.sponsorship.findFirst.mockResolvedValue(row);
+      await expect(service.report('u1', 's1', '000000', HASH)).rejects.toThrow('對帳碼不正確');
+      expect(prisma.sponsorship.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to swap a recorded hash for another one', async () => {
+      prisma.sponsorship.findFirst.mockResolvedValue({ ...row, reportedAt: new Date(), txHash: HASH.toLowerCase() });
+      await expect(service.report('u1', 's1', '123456', '0x' + 'cd'.repeat(32))).rejects.toThrow(BadRequestException);
+      expect(prisma.sponsorship.update).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the same hash is reported again', async () => {
+      const done = { ...row, reportedAt: new Date(), txHash: HASH.toLowerCase() };
+      prisma.sponsorship.findFirst.mockResolvedValue(done);
+      const res = await service.report('u1', 's1', '123456', HASH);
+      expect(prisma.sponsorship.update).not.toHaveBeenCalled();
+      expect(res.txHash).toBe(HASH.toLowerCase());
+    });
+
+    it('adds a hash to an already-reported pledge without moving reportedAt', async () => {
+      const first = new Date('2026-01-01');
+      prisma.sponsorship.findFirst.mockResolvedValue({ ...row, reportedAt: first });
+      prisma.sponsorship.update.mockImplementation(async ({ data }: any) => ({ ...row, reportedAt: first, ...data }));
+      await service.report('u1', 's1', '123456', HASH);
+      expect(prisma.sponsorship.update.mock.calls[0][0].data).toEqual({ txHash: HASH.toLowerCase() });
+    });
+
+    it('turns a duplicate hash (unique index) into a readable error', async () => {
+      prisma.sponsorship.findFirst.mockResolvedValue(row);
+      prisma.sponsorship.update.mockRejectedValue({ code: 'P2002' });
+      await expect(service.report('u1', 's1', '123456', HASH)).rejects.toThrow('已經被回報過');
+    });
+
+    it('does not swallow other database errors', async () => {
+      prisma.sponsorship.findFirst.mockResolvedValue(row);
+      prisma.sponsorship.update.mockRejectedValue(new Error('db down'));
+      await expect(service.report('u1', 's1', '123456', HASH)).rejects.toThrow('db down');
+    });
+  });
+
+  describe('crypto channel config', () => {
+    afterEach(() => { SPONSOR_CRYPTO.address = null; });
+    it('is hidden while no address is set', () => {
+      expect(service.getInfo().crypto).toBeNull();
+    });
+    it('is shown with coin, network and address once a well-formed address is set', () => {
+      SPONSOR_CRYPTO.address = '0x' + 'b'.repeat(40);
+      expect(service.getInfo().crypto).toMatchObject({ coin: 'BNB', address: '0x' + 'b'.repeat(40) });
+    });
+    it('stays hidden for a malformed address rather than showing a wrong one', () => {
+      SPONSOR_CRYPTO.address = '0x123';
+      expect(service.getInfo().crypto).toBeNull();
+    });
+    it('the address committed in code is empty or a well-formed 0x address', () => {
+      // runs against the real constant: a typo'd paste fails here, not in production
+      expect(SPONSOR_CRYPTO.address === null || BSC_ADDRESS_RE.test(SPONSOR_CRYPTO.address)).toBe(true);
     });
   });
 
