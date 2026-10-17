@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 /** Served from frontend/public/news; the page hides the section if the file is missing. */
-export const HEADLINE_IMAGE = '/news/racing-gazette.jpg';
+export const HEADLINE_IMAGE = '/news/racing-gazette.webp';
 const HEADLINE_ALT = '財神時報 賽馬公報：賽程預測、各路好手介紹與現場活動預告';
 
 /**
