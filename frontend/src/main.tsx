@@ -6,6 +6,9 @@ import { App } from './App.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
 import { AdminAuthProvider } from './context/AdminAuthContext.tsx';
 import { TourProvider } from './tour/TourProvider.tsx';
+import { startAnalytics } from './analytics';
+
+startAnalytics();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 
-export const LEGAL_UPDATED = '2026-10-16';
+export const LEGAL_UPDATED = '2026-10-17';
 
 export function PrivacyPage() {
   return (
@@ -27,6 +27,7 @@ export function PrivacyPage() {
         <li>
           <strong>技術資料：</strong>為了防止濫用與惡意登入，系統會暫時使用你的 IP 位址計算請求次數與登入失敗次數；
           你的瀏覽器也會在本機記住少數偏好（例如是否看過更新日誌），這些資料不會傳到伺服器。
+          網站另外使用不設定 Cookie 的流量統計（Vercel Web Analytics），只統計頁面瀏覽次數、造訪來源、國家與裝置類型等彙總資訊，用來了解網站使用情形，不用於辨識個人。
         </li>
       </ul>
 
@@ -58,7 +59,7 @@ export function PrivacyPage() {
       <h2>四、委外服務</h2>
       <p>系統由下列服務供應商協助運作，他們只在提供服務所需的範圍內處理資料：</p>
       <ul>
-        <li>主機與資料庫：Railway、Vercel。</li>
+        <li>主機與資料庫：Railway、Vercel（含上述流量統計）。</li>
         <li>寄送電子郵件：Resend。</li>
         <li>
           客服小幫手：你輸入的問題文字會送到 AI 服務（Anthropic 或 Google）產生回覆。
