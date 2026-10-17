@@ -34,9 +34,9 @@ export class SponsorshipService {
 
   /** The crypto channel, or null while no (well-formed) address is set. */
   private cryptoInfo() {
-    const { coin, network, address, memo } = SPONSOR_CRYPTO;
+    const { coins, network, address, memo } = SPONSOR_CRYPTO;
     if (!address || !BSC_ADDRESS_RE.test(address)) return null;
-    return { coin, network, address, memo };
+    return { coins, network, address, memo };
   }
 
   async create(userId: string, amount: number) {

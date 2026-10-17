@@ -191,7 +191,7 @@ describe('SponsorshipService', () => {
     });
     it('is shown with coin, network and address once a well-formed address is set', () => {
       SPONSOR_CRYPTO.address = '0x' + 'b'.repeat(40);
-      expect(service.getInfo().crypto).toMatchObject({ coin: 'BNB', address: '0x' + 'b'.repeat(40) });
+      expect(service.getInfo().crypto).toMatchObject({ coins: ['USDT', 'USDC'], address: '0x' + 'b'.repeat(40) });
     });
     it('stays hidden for a malformed address rather than showing a wrong one', () => {
       SPONSOR_CRYPTO.address = '0x123';

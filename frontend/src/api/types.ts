@@ -343,7 +343,7 @@ export interface SponsorshipInfo {
 }
 
 export interface SponsorshipCrypto {
-  coin: string;
+  coins: string[];
   network: string;
   address: string;
   memo: string | null;

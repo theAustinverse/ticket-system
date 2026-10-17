@@ -153,12 +153,12 @@ export function SponsorBox() {
           <div className="sponsor-crypto">
             <h3>或用加密貨幣贊助（選用）</h3>
             <p className="sponsor-warn">
-              只收 <strong>{info.crypto.coin}</strong>，網路必須選{' '}
-              <strong>{info.crypto.network}</strong>。選錯幣或選錯網路，款項通常無法找回。
+              只收 <strong>{info.crypto.coins.join(' 或 ')}</strong>，網路必須選{' '}
+              <strong>{info.crypto.network}</strong>。轉其他幣（例如 BNB）或選錯網路，款項通常無法找回。
             </p>
             <CryptoAddress address={info.crypto.address} />
             <p className="hint">
-              轉帳前請核對地址的前 8 碼與最後 6 碼（粗體處）。金額請轉約 NT$ {created.amount.toLocaleString()} 等值的 {info.crypto.coin}。
+              轉帳前請核對地址的前 8 碼與最後 6 碼（粗體處）。金額請依當日匯率，轉約 NT$ {created.amount.toLocaleString()} 等值的美元（{info.crypto.coins.join(' 或 ')} 約等於 1 美元）。
               {info.crypto.memo && <> 備註／Memo 請填 <strong>{info.crypto.memo}</strong>。</>}
             </p>
             <button type="button" className="link-button" onClick={() => copyAddress(info.crypto!.address)}>
