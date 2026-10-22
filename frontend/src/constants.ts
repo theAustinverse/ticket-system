@@ -17,7 +17,6 @@ export const TEAM_OPTIONS = [
   '咏璇',
   '靜靜',
   '朱佳期',
-  '其他',
 ];
 
 /** The LINE account visitors are asked to add from the home page and the 聯絡我們 page. https only. */

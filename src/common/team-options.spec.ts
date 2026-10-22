@@ -14,4 +14,11 @@ describe('TEAM_OPTIONS', () => {
     const frontend = [...list.matchAll(/'([^']+)'/g)].map((m) => m[1]);
     expect([...TEAM_OPTIONS]).toEqual(frontend);
   });
+
+  it('has no catch-all entry: a person whose leader is missing is sent to 聯絡我們', () => {
+    // '其他' used to be here and let anyone file under no leader at all, which
+    // hid them from every per-team count. Adding a new team is a code change on
+    // purpose; the registration and profile forms point people at 聯絡我們.
+    expect([...TEAM_OPTIONS]).not.toContain('其他');
+  });
 });
